@@ -24,48 +24,52 @@ class RtmpConnection(private val url: String) : StreamConnection {
     override var isConnected: Boolean = false
         private set
 
-    override suspend fun connect() = withContext(Dispatchers.IO) {
-        try {
-            val uri = URI(url)
-            val host = uri.host ?: throw IOException("Invalid host in URL: $url")
-            val isSecure = uri.scheme?.lowercase() == "rtmps"
-            val port = if (uri.port > 0) uri.port else if (isSecure) 443 else 1935
+    override suspend fun connect() {
+        withContext(Dispatchers.IO) {
+            try {
+                val uri = URI(url)
+                val host = uri.host ?: throw IOException("Invalid host in URL: $url")
+                val isSecure = uri.scheme?.lowercase() == "rtmps"
+                val port = if (uri.port > 0) uri.port else if (isSecure) 443 else 1935
 
-            socket = if (isSecure) {
-                SSLSocketFactory.getDefault().createSocket(host, port)
-            } else {
-                Socket(host, port)
+                socket = if (isSecure) {
+                    SSLSocketFactory.getDefault().createSocket(host, port)
+                } else {
+                    Socket(host, port)
+                }
+
+                socket?.let { s ->
+                    s.tcpNoDelay = true
+                    s.soTimeout = 10_000
+                    outputStream = DataOutputStream(s.getOutputStream())
+                    inputStream = s.getInputStream()
+                }
+
+                performHandshake()
+                isConnected = true
+                Log.i(TAG, "RTMP connected to $host:$port")
+            } catch (e: Exception) {
+                isConnected = false
+                throw IOException("RTMP connection failed: ${e.message}", e)
             }
-
-            socket?.let { s ->
-                s.tcpNoDelay = true
-                s.soTimeout = 10_000
-                outputStream = DataOutputStream(s.getOutputStream())
-                inputStream = s.getInputStream()
-            }
-
-            performHandshake()
-            isConnected = true
-            Log.i(TAG, "RTMP connected to $host:$port")
-        } catch (e: Exception) {
-            isConnected = false
-            throw IOException("RTMP connection failed: ${e.message}", e)
         }
     }
 
-    override suspend fun disconnect() = withContext(Dispatchers.IO) {
-        isConnected = false
-        try {
-            outputStream?.close()
-            inputStream?.close()
-            socket?.close()
-        } catch (e: Exception) {
-            Log.w(TAG, "Error closing RTMP connection", e)
+    override suspend fun disconnect() {
+        withContext(Dispatchers.IO) {
+            isConnected = false
+            try {
+                outputStream?.close()
+                inputStream?.close()
+                socket?.close()
+            } catch (e: Exception) {
+                Log.w(TAG, "Error closing RTMP connection", e)
+            }
+            outputStream = null
+            inputStream = null
+            socket = null
+            Log.i(TAG, "RTMP disconnected")
         }
-        outputStream = null
-        inputStream = null
-        socket = null
-        Log.i(TAG, "RTMP disconnected")
     }
 
     override fun sendVideo(data: ByteArray, timestampUs: Long) {
