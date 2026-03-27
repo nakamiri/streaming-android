@@ -19,7 +19,7 @@ data class ChatMessage(
     val isAction: Boolean = false,
 )
 
-enum class ChatPlatform { TWITCH, KICK, YOUTUBE }
+enum class ChatPlatform { TWITCH, YOUTUBE }
 
 class ChatManager {
 
@@ -35,7 +35,6 @@ class ChatManager {
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
 
     private var twitchSocket: WebSocket? = null
-    private var messageCounter = 0L
 
     fun connectTwitch(channel: String) {
         if (channel.isBlank()) return
@@ -60,7 +59,7 @@ class ChatManager {
                         webSocket.send("PONG :tmi.twitch.tv")
                         return@forEach
                     }
-                    parseTwitchMessage(line)?.let { msg ->
+                    TwitchMessageParser.parse(line)?.let { msg ->
                         addMessage(msg)
                     }
                 }
@@ -69,7 +68,6 @@ class ChatManager {
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "Twitch chat error", t)
                 _isConnected.value = false
-                // Reconnect after delay
                 scope.launch {
                     delay(5000)
                     connectTwitch(channel)
@@ -93,62 +91,17 @@ class ChatManager {
         twitchSocket?.send("PRIVMSG $message")
     }
 
-    private fun parseTwitchMessage(raw: String): ChatMessage? {
-        // Parse IRC message with tags
-        if (!raw.contains("PRIVMSG")) return null
-
-        try {
-            var tags = mapOf<String, String>()
-            var remaining = raw
-
-            if (remaining.startsWith("@")) {
-                val tagEnd = remaining.indexOf(' ')
-                val tagString = remaining.substring(1, tagEnd)
-                tags = tagString.split(';').associate {
-                    val parts = it.split('=', limit = 2)
-                    parts[0] to (parts.getOrNull(1) ?: "")
-                }
-                remaining = remaining.substring(tagEnd + 1)
-            }
-
-            val username = tags["display-name"]
-                ?: remaining.substringBefore('!').removePrefix(":")
-            val color = tags["color"]?.takeIf { it.isNotEmpty() }
-            val message = remaining.substringAfter("PRIVMSG").substringAfter(':')
-            val isAction = message.startsWith("\u0001ACTION") && message.endsWith("\u0001")
-            val cleanMessage = if (isAction) {
-                message.removePrefix("\u0001ACTION ").removeSuffix("\u0001")
-            } else {
-                message
-            }
-
-            val badges = tags["badges"]?.split(',')?.mapNotNull {
-                it.split('/').firstOrNull()
-            } ?: emptyList()
-
-            return ChatMessage(
-                id = tags["id"] ?: "${messageCounter++}",
-                platform = ChatPlatform.TWITCH,
-                username = username,
-                message = cleanMessage.trim(),
-                color = color,
-                badges = badges,
-                isAction = isAction,
-            )
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to parse Twitch message: $raw", e)
-            return null
-        }
-    }
-
-    private fun addMessage(message: ChatMessage) {
+    internal fun addMessage(message: ChatMessage) {
         val current = _messages.value.toMutableList()
         current.add(message)
-        // Keep last 200 messages
-        if (current.size > 200) {
+        if (current.size > MAX_MESSAGES) {
             current.removeAt(0)
         }
         _messages.value = current
+    }
+
+    fun clearMessages() {
+        _messages.value = emptyList()
     }
 
     fun release() {
@@ -158,5 +111,6 @@ class ChatManager {
 
     companion object {
         private const val TAG = "ChatManager"
+        internal const val MAX_MESSAGES = 200
     }
 }

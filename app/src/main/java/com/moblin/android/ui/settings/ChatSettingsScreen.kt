@@ -10,7 +10,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.moblin.android.data.model.ChatSettings
 import com.moblin.android.ui.Screen
@@ -23,7 +22,6 @@ fun ChatSettingsScreen(
     onUpdate: (ChatSettings) -> Unit,
 ) {
     var twitchChannel by remember(chat) { mutableStateOf(chat.twitchChannelName) }
-    var kickChannel by remember(chat) { mutableStateOf(chat.kickChannelName) }
     var youtubeVideoId by remember(chat) { mutableStateOf(chat.youtubeVideoId) }
     var fontSize by remember(chat) { mutableStateOf(chat.fontSize.toString()) }
 
@@ -36,7 +34,6 @@ fun ChatSettingsScreen(
                         onUpdate(
                             chat.copy(
                                 twitchChannelName = twitchChannel,
-                                kickChannelName = kickChannel,
                                 youtubeVideoId = youtubeVideoId,
                                 fontSize = fontSize.toIntOrNull() ?: 14,
                             )
@@ -69,18 +66,6 @@ fun ChatSettingsScreen(
             OutlinedTextField(
                 value = twitchChannel,
                 onValueChange = { twitchChannel = it },
-                label = { Text("Channel Name") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-
-            HorizontalDivider()
-
-            Text("Kick", style = MaterialTheme.typography.titleMedium)
-
-            OutlinedTextField(
-                value = kickChannel,
-                onValueChange = { kickChannel = it },
                 label = { Text("Channel Name") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,

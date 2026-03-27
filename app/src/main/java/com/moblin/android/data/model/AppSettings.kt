@@ -47,7 +47,6 @@ data class ChatSettings(
     val fontSize: Int = 14,
     val twitchChannelName: String = "",
     val twitchAccessToken: String = "",
-    val kickChannelName: String = "",
     val youtubeVideoId: String = "",
 )
 

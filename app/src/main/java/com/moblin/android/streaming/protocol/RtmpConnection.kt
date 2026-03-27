@@ -72,7 +72,7 @@ class RtmpConnection(private val url: String) : StreamConnection {
         if (!isConnected) return
         try {
             val timestampMs = (timestampUs / 1000).toInt()
-            val chunkHeader = createRtmpChunkHeader(
+            val chunkHeader = RtmpChunkHeader.create(
                 chunkStreamId = 6,
                 timestamp = timestampMs,
                 messageLength = data.size,
@@ -94,7 +94,7 @@ class RtmpConnection(private val url: String) : StreamConnection {
         if (!isConnected) return
         try {
             val timestampMs = (timestampUs / 1000).toInt()
-            val chunkHeader = createRtmpChunkHeader(
+            val chunkHeader = RtmpChunkHeader.create(
                 chunkStreamId = 4,
                 timestamp = timestampMs,
                 messageLength = data.size,
@@ -161,35 +161,6 @@ class RtmpConnection(private val url: String) : StreamConnection {
             if (read < 0) throw IOException("Unexpected end of stream")
             offset += read
         }
-    }
-
-    private fun createRtmpChunkHeader(
-        chunkStreamId: Int,
-        timestamp: Int,
-        messageLength: Int,
-        messageTypeId: Int,
-        messageStreamId: Int,
-    ): ByteArray {
-        // Format 0 chunk header (full)
-        val header = ByteArray(12)
-        // Basic header: format(2 bits) = 0, csid(6 bits)
-        header[0] = (0x00 or (chunkStreamId and 0x3F)).toByte()
-        // Timestamp (3 bytes, big-endian)
-        header[1] = (timestamp shr 16 and 0xFF).toByte()
-        header[2] = (timestamp shr 8 and 0xFF).toByte()
-        header[3] = (timestamp and 0xFF).toByte()
-        // Message length (3 bytes, big-endian)
-        header[4] = (messageLength shr 16 and 0xFF).toByte()
-        header[5] = (messageLength shr 8 and 0xFF).toByte()
-        header[6] = (messageLength and 0xFF).toByte()
-        // Message type ID
-        header[7] = messageTypeId.toByte()
-        // Message stream ID (4 bytes, little-endian)
-        header[8] = (messageStreamId and 0xFF).toByte()
-        header[9] = (messageStreamId shr 8 and 0xFF).toByte()
-        header[10] = (messageStreamId shr 16 and 0xFF).toByte()
-        header[11] = (messageStreamId shr 24 and 0xFF).toByte()
-        return header
     }
 
     companion object {
