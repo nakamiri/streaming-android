@@ -62,4 +62,10 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.accompanist.permissions)
     debugImplementation(libs.androidx.ui.tooling)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
+    testImplementation(libs.mockk)
+    testImplementation(libs.robolectric)
 }
