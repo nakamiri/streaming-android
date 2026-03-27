@@ -27,35 +27,39 @@ class SrtConnection(
     override var isConnected: Boolean = false
         private set
 
-    override suspend fun connect() = withContext(Dispatchers.IO) {
-        try {
-            val uri = URI(url)
-            address = InetAddress.getByName(uri.host)
-            port = if (uri.port > 0) uri.port else 9000
+    override suspend fun connect() {
+        withContext(Dispatchers.IO) {
+            try {
+                val uri = URI(url)
+                address = InetAddress.getByName(uri.host)
+                port = if (uri.port > 0) uri.port else 9000
 
-            socket = DatagramSocket().apply {
-                soTimeout = latencyMs
-                sendBufferSize = 1024 * 1024
+                socket = DatagramSocket().apply {
+                    soTimeout = latencyMs
+                    sendBufferSize = 1024 * 1024
+                }
+
+                isConnected = true
+                Log.i(TAG, "SRT connected to ${uri.host}:$port (latency: ${latencyMs}ms)")
+            } catch (e: Exception) {
+                isConnected = false
+                throw IOException("SRT connection failed: ${e.message}", e)
             }
-
-            isConnected = true
-            Log.i(TAG, "SRT connected to ${uri.host}:$port (latency: ${latencyMs}ms)")
-        } catch (e: Exception) {
-            isConnected = false
-            throw IOException("SRT connection failed: ${e.message}", e)
         }
     }
 
-    override suspend fun disconnect() = withContext(Dispatchers.IO) {
-        isConnected = false
-        try {
-            socket?.close()
-        } catch (e: Exception) {
-            Log.w(TAG, "Error closing SRT connection", e)
+    override suspend fun disconnect() {
+        withContext(Dispatchers.IO) {
+            isConnected = false
+            try {
+                socket?.close()
+            } catch (e: Exception) {
+                Log.w(TAG, "Error closing SRT connection", e)
+            }
+            socket = null
+            address = null
+            Log.i(TAG, "SRT disconnected")
         }
-        socket = null
-        address = null
-        Log.i(TAG, "SRT disconnected")
     }
 
     override fun sendVideo(data: ByteArray, timestampUs: Long) {
