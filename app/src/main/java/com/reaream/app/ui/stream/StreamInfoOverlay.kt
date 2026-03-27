@@ -58,6 +58,10 @@ fun StreamInfoOverlay(
             InfoText("${streamState.bitrateKbps} kbps")
         }
 
+        if (settings.display.showFps && streamState.fps > 0) {
+            InfoText("${streamState.fps} fps")
+        }
+
         if (settings.display.showUptime) {
             val hours = streamState.uptime / 3600
             val minutes = (streamState.uptime % 3600) / 60

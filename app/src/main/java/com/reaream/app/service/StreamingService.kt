@@ -34,7 +34,7 @@ class StreamingService : Service() {
         val notification = NotificationCompat.Builder(this, ReareamApplication.STREAMING_CHANNEL_ID)
             .setContentTitle(getString(R.string.stream_notification_title))
             .setContentText(getString(R.string.stream_notification_text))
-            .setSmallIcon(android.R.drawable.ic_menu_camera)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()
