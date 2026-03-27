@@ -127,9 +127,7 @@ class RtmpConnection(private val url: String) : StreamConnection {
         c1[2] = (timestamp shr 8).toByte()
         c1[3] = timestamp.toByte()
         // bytes 4-7 are zero
-        for (i in 8 until 1536) {
-            c1[i] = (Math.random() * 256).toInt().toByte()
-        }
+        kotlin.random.Random.nextBytes(c1, 8, 1536)
         out.write(c1)
         out.flush()
 
