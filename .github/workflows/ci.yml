@@ -30,13 +30,23 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build debug APK
-        id: build
+        id: build_debug
         run: ./gradlew assembleDebug 2>&1 | tee build-output.log
 
-      - name: Run unit tests
-        id: test
+      - name: Build release APK
+        id: build_release
+        if: success()
+        run: ./gradlew assembleRelease 2>&1 | tee -a build-output.log
+
+      - name: Run debug unit tests
+        id: test_debug
         if: success()
         run: ./gradlew testDebugUnitTest 2>&1 | tee test-output.log
+
+      - name: Run release unit tests
+        id: test_release
+        if: success()
+        run: ./gradlew testReleaseUnitTest 2>&1 | tee -a test-output.log
 
       - name: Post failure comment on PR
         if: failure() && github.event_name == 'pull_request'
