@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Reaream</string>
+    <string name="stream_notification_channel">Streaming</string>
+    <string name="stream_notification_title">Live Streaming</string>
+    <string name="stream_notification_text">Streaming is active</string>
+</resources>
