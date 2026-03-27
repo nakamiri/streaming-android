@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.moblin.android"
+    namespace = "com.reaream.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.moblin.android"
+        applicationId = "com.reaream.app"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
