@@ -7,10 +7,10 @@
 -keepclasseswithmembers class kotlinx.serialization.json.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
--keep,includedescriptorclasses class com.moblin.android.**$$serializer { *; }
--keepclassmembers class com.moblin.android.** {
+-keep,includedescriptorclasses class com.reaream.app.**$$serializer { *; }
+-keepclassmembers class com.reaream.app.** {
     *** Companion;
 }
--keepclasseswithmembers class com.moblin.android.** {
+-keepclasseswithmembers class com.reaream.app.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
