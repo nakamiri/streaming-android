@@ -8,7 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.reaream.app.data.model.AppSettings
@@ -40,6 +40,8 @@ fun StreamSettingsScreen(
             )
         },
     ) { padding ->
+        var deleteTargetIndex by remember { mutableStateOf<Int?>(null) }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -63,16 +65,47 @@ fun StreamSettingsScreen(
                             IconButton(onClick = { onNavigate(Screen.StreamEdit(index)) }) {
                                 Icon(Icons.Filled.Edit, contentDescription = "Edit")
                             }
-                            if (settings.streams.size > 1) {
-                                IconButton(onClick = { onDeleteStream(index) }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = "Delete")
-                                }
+                            IconButton(
+                                onClick = { deleteTargetIndex = index },
+                                enabled = settings.streams.size > 1,
+                            ) {
+                                Icon(
+                                    Icons.Filled.Delete,
+                                    contentDescription = "Delete",
+                                    tint = if (settings.streams.size > 1)
+                                        MaterialTheme.colorScheme.error
+                                    else
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                                )
                             }
                         }
                     },
                     modifier = Modifier.clickable { onSelectStream(index) },
                 )
             }
+        }
+
+        // Delete confirmation dialog
+        deleteTargetIndex?.let { index ->
+            val streamName = settings.streams.getOrNull(index)?.name ?: ""
+            AlertDialog(
+                onDismissRequest = { deleteTargetIndex = null },
+                title = { Text("ストリームを削除") },
+                text = { Text("「$streamName」を削除しますか？この操作は取り消せません。") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onDeleteStream(index)
+                        deleteTargetIndex = null
+                    }) {
+                        Text("削除", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { deleteTargetIndex = null }) {
+                        Text("キャンセル")
+                    }
+                },
+            )
         }
     }
 }

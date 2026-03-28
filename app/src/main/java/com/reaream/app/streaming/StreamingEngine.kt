@@ -42,6 +42,11 @@ class StreamingEngine {
     private var encoderWidth: Int = 0
     private var encoderHeight: Int = 0
 
+    // Pre-allocated buffers reused every frame to avoid GC pressure at 60fps
+    private var rawFrameBuffer: ByteArray? = null   // camera frame copy (srcW*srcH*3/2)
+    private var scaledBuffer: ByteArray? = null     // after scaleI420 (encW*encH*3/2)
+    private var encoderInputBuffer: ByteArray? = null // after format conversion (stride-padded)
+
     data class StreamState(
         val isStreaming: Boolean = false,
         val isConnecting: Boolean = false,
@@ -147,11 +152,15 @@ class StreamingEngine {
         if (baseVideoTimestampUs < 0) baseVideoTimestampUs = presentationTimeUs
         val relativeUs = presentationTimeUs - baseVideoTimestampUs
         try {
-            // TODO: reuse ByteArray buffers to reduce GC pressure (currently 2 allocs/frame at 30fps)
-            val scaled = YuvUtils.scaleI420(
-                ByteArray(buffer.remaining()).also { buffer.get(it) },
-                width, height, encoderWidth, encoderHeight
-            )
+            // Reuse pre-allocated buffers to avoid GC pressure at high framerates
+            val frameSize = buffer.remaining()
+            val raw = rawFrameBuffer?.takeIf { it.size == frameSize }
+                ?: ByteArray(frameSize).also { rawFrameBuffer = it }
+            buffer.get(raw)
+
+            val scaled = scaledBuffer ?: ByteArray(encoderWidth * encoderHeight * 3 / 2)
+                .also { scaledBuffer = it }
+            YuvUtils.scaleI420Into(raw, width, height, scaled, encoderWidth, encoderHeight)
             widgetRenderer.renderOntoFrame(scaled, encoderWidth, encoderHeight, widgetSettingsRef.get())
 
             // Convert I420 to the format the encoder actually expects
@@ -251,6 +260,12 @@ class StreamingEngine {
             encoderSliceHeight = if (inputFormat.containsKey(MediaFormat.KEY_SLICE_HEIGHT))
                 inputFormat.getInteger(MediaFormat.KEY_SLICE_HEIGHT) else height
             Log.i(TAG, "Encoder actual color format: $encoderColorFormat (0x${encoderColorFormat.toString(16)}), stride=$encoderStride, sliceHeight=$encoderSliceHeight")
+
+            // Pre-allocate buffers now that stride/sliceHeight are known
+            scaledBuffer = ByteArray(width * height * 3 / 2)
+            val uvStride = encoderStride / 2
+            val uvSlice = encoderSliceHeight / 2
+            encoderInputBuffer = ByteArray(encoderStride * encoderSliceHeight + uvStride * 2 * uvSlice)
         }
     }
 
@@ -267,11 +282,14 @@ class StreamingEngine {
         val uvStride = stride / 2
         val uvSliceHeight = sliceHeight / 2
 
-        // NV12 buffer size with stride/sliceHeight padding
         val bufferSize = stride * sliceHeight + uvStride * 2 * uvSliceHeight
-
         val i420UOffset = width * height
         val i420VOffset = i420UOffset + (width / 2) * (height / 2)
+
+        // Reuse pre-allocated encoder input buffer
+        val out = encoderInputBuffer?.takeIf { it.size == bufferSize }
+            ?: ByteArray(bufferSize).also { encoderInputBuffer = it }
+        out.fill(0)
 
         return when (encoderColorFormat) {
             // Semi-planar NV12: Y then interleaved UV, with stride/sliceHeight alignment
@@ -279,7 +297,6 @@ class StreamingEngine {
             // COLOR_FormatYUV420Flexible (0x7F420888) — most Samsung/Qualcomm HW encoders
             // use NV12 layout. If a device uses a different layout, this may need revisiting.
             0x7F420888 -> {
-                val out = ByteArray(bufferSize)
                 // Copy Y rows with stride padding
                 for (row in 0 until height) {
                     System.arraycopy(i420, row * width, out, row * stride, width)
@@ -301,7 +318,6 @@ class StreamingEngine {
                 if (stride == width && sliceHeight == height) {
                     i420 // No conversion needed
                 } else {
-                    val out = ByteArray(bufferSize)
                     for (row in 0 until height) {
                         System.arraycopy(i420, row * width, out, row * stride, width)
                     }
@@ -316,7 +332,6 @@ class StreamingEngine {
             }
             // Unknown/flexible — NV12 with stride alignment
             else -> {
-                val out = ByteArray(bufferSize)
                 for (row in 0 until height) {
                     System.arraycopy(i420, row * width, out, row * stride, width)
                 }
@@ -385,6 +400,12 @@ class StreamingEngine {
             audioEncoder?.release()
         } catch (_: Exception) {}
         audioEncoder = null
+
+        rawFrameBuffer = null
+        scaledBuffer = null
+        encoderInputBuffer = null
+        baseVideoTimestampUs = -1L
+        baseAudioTimestampUs = -1L
     }
 
     private fun launchStatsUpdater() {
