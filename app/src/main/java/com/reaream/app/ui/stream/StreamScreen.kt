@@ -64,6 +64,9 @@ fun StreamScreen(
     broadcastPicker: com.reaream.app.ui.MainViewModel.BroadcastPickerState = com.reaream.app.ui.MainViewModel.BroadcastPickerState(),
     onSelectBroadcast: ((String?) -> Unit)? = null,
     onDismissBroadcastPicker: (() -> Unit)? = null,
+    stopConfirmVisible: Boolean = false,
+    onConfirmStop: ((endBroadcast: Boolean) -> Unit)? = null,
+    onDismissStopConfirm: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val configuration = LocalConfiguration.current
@@ -243,6 +246,15 @@ fun StreamScreen(
             }
         }
 
+        // Stop confirmation dialog (YouTube OAuth only)
+        if (stopConfirmVisible) {
+            StopConfirmDialog(
+                onPause = { onConfirmStop?.invoke(false) },
+                onEnd = { onConfirmStop?.invoke(true) },
+                onDismiss = { onDismissStopConfirm?.invoke() },
+            )
+        }
+
         // YouTube broadcast picker dialog
         if (broadcastPicker.isVisible) {
             BroadcastPickerDialog(
@@ -253,6 +265,33 @@ fun StreamScreen(
             )
         }
     }
+}
+
+@Composable
+private fun StopConfirmDialog(
+    onPause: () -> Unit,
+    onEnd: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { androidx.compose.material3.Text("配信を停止しますか？") },
+        text = {
+            androidx.compose.material3.Text(
+                "「一時停止」はRTMP接続のみ切断します。\nYouTube配信枠は維持され、再配信ボタンから再接続できます。"
+            )
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onEnd) {
+                androidx.compose.material3.Text("配信終了", color = Color(0xFFFF6B6B))
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onPause) {
+                androidx.compose.material3.Text("一時停止")
+            }
+        },
+    )
 }
 
 @Composable
