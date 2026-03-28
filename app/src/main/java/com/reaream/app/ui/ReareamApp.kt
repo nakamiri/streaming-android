@@ -22,6 +22,7 @@ fun ReareamApp(
     val currentAddress by viewModel.locationProvider.address.collectAsStateWithLifecycle()
     val speedKmh by viewModel.locationProvider.speedKmh.collectAsStateWithLifecycle()
     val locationPermissionDenied by viewModel.locationProvider.permissionDenied.collectAsStateWithLifecycle()
+    val mapBitmap by viewModel.mapTileProvider.mapBitmap.collectAsStateWithLifecycle()
 
     AnimatedContent(
         targetState = currentScreen,
@@ -47,6 +48,7 @@ fun ReareamApp(
                 currentAddress = currentAddress,
                 speedKmh = speedKmh,
                 locationPermissionDenied = locationPermissionDenied,
+                mapBitmap = mapBitmap,
                 onUpdateWidgets = viewModel::updateWidgetSettings,
                 onRecheckPermission = { viewModel.locationProvider.recheckPermission() },
             )

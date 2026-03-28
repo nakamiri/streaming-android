@@ -62,6 +62,7 @@ data class WidgetSettings(
     val clockWidget: ClockWidgetConfig = ClockWidgetConfig(),
     val locationWidget: LocationWidgetConfig = LocationWidgetConfig(),
     val speedWidget: SpeedWidgetConfig = SpeedWidgetConfig(),
+    val mapWidget: MapWidgetConfig = MapWidgetConfig(),
 )
 
 @Serializable
@@ -88,6 +89,15 @@ data class SpeedWidgetConfig(
     val y: Float = 0.055f,
     val fontSize: Int = 14,
     val unit: SpeedUnit = SpeedUnit.KMH,
+)
+
+@Serializable
+data class MapWidgetConfig(
+    val enabled: Boolean = false,
+    val x: Float = 0.01f,
+    val y: Float = 0.01f,
+    val sizeDp: Int = 120,
+    val zoom: Int = 15,
 )
 
 @Serializable

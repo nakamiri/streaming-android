@@ -125,4 +125,40 @@ class WidgetSettingsTest {
         assertFalse(settings.speedWidget.enabled)
         assertEquals(SpeedUnit.KMH, settings.speedWidget.unit)
     }
+
+    @Test
+    fun `map widget default values`() {
+        val config = MapWidgetConfig()
+        assertFalse(config.enabled)
+        assertEquals(0.01f, config.x, 0.01f)
+        assertEquals(0.01f, config.y, 0.01f)
+        assertEquals(120, config.sizeDp)
+        assertEquals(15, config.zoom)
+    }
+
+    @Test
+    fun `map widget serialization round trip`() {
+        val config = MapWidgetConfig(
+            enabled = true,
+            x = 0.5f,
+            y = 0.5f,
+            sizeDp = 160,
+            zoom = 12,
+        )
+        val settings = WidgetSettings(mapWidget = config)
+        val serialized = json.encodeToString(WidgetSettings.serializer(), settings)
+        val deserialized = json.decodeFromString(WidgetSettings.serializer(), serialized)
+        assertEquals(settings, deserialized)
+        assertEquals(160, deserialized.mapWidget.sizeDp)
+        assertEquals(12, deserialized.mapWidget.zoom)
+    }
+
+    @Test
+    fun `widget settings without mapWidget deserializes with defaults`() {
+        val old = """{"clockWidget":{"enabled":false}}"""
+        val settings = json.decodeFromString(WidgetSettings.serializer(), old)
+        assertFalse(settings.mapWidget.enabled)
+        assertEquals(120, settings.mapWidget.sizeDp)
+        assertEquals(15, settings.mapWidget.zoom)
+    }
 }
