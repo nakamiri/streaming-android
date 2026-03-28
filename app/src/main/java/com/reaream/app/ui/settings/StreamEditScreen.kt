@@ -1,21 +1,26 @@
 package com.reaream.app.ui.settings
 
+import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.reaream.app.data.YouTubeAuthManager
 import com.reaream.app.data.model.*
-import com.reaream.app.ui.Screen
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -24,6 +29,9 @@ fun StreamEditScreen(
     settings: AppSettings,
     onBack: () -> Unit,
     onSave: (Int, StreamConfig) -> Unit,
+    youtubeAuthManager: YouTubeAuthManager? = null,
+    oauthCallback: SharedFlow<Uri>? = null,
+    onSignOutYouTube: (() -> Unit)? = null,
 ) {
     val stream = settings.streams.getOrElse(streamIndex) { StreamConfig() }
 
@@ -37,6 +45,28 @@ fun StreamEditScreen(
     var fps by remember(stream) { mutableStateOf(stream.fps.toString()) }
     var videoCodec by remember(stream) { mutableStateOf(stream.videoCodec) }
     var srtLatency by remember(stream) { mutableStateOf(stream.srtLatency.toString()) }
+    var adaptiveBitrate by remember(stream) { mutableStateOf(stream.adaptiveBitrate) }
+
+    // YouTube OAuth state (only relevant when authType == YOUTUBE_OAUTH)
+    var channelName by remember { mutableStateOf(youtubeAuthManager?.getChannelName() ?: stream.youtubeChannelName) }
+    var isAuthenticating by remember { mutableStateOf(false) }
+    var authError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+
+    LaunchedEffect(oauthCallback) {
+        oauthCallback?.collect { uri ->
+            isAuthenticating = true
+            val success = youtubeAuthManager?.handleRedirect(uri) == true
+            if (success) {
+                channelName = youtubeAuthManager?.getChannelName() ?: ""
+                authError = null
+            } else {
+                authError = "認証に失敗しました"
+            }
+            isAuthenticating = false
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -62,6 +92,11 @@ fun StreamEditScreen(
                                 fps = fps.toIntOrNull() ?: 30,
                                 videoCodec = videoCodec,
                                 srtLatency = srtLatency.toIntOrNull() ?: 2000,
+                                adaptiveBitrate = adaptiveBitrate,
+                                authType = stream.authType,
+                                youtubeChannelName = channelName,
+                                youtubeBroadcastTitle = stream.youtubeBroadcastTitle,
+                                youtubePrivacy = stream.youtubePrivacy,
                             )
                         )
                         onBack()
@@ -237,6 +272,18 @@ fun StreamEditScreen(
                 )
             }
 
+            // Adaptive quality
+            ListItem(
+                headlineContent = { Text("アダプティブ品質") },
+                supportingContent = { Text("品質低下時にFPSを維持しながら解像度を自動で下げる") },
+                trailingContent = {
+                    Switch(
+                        checked = adaptiveBitrate,
+                        onCheckedChange = { adaptiveBitrate = it },
+                    )
+                },
+            )
+
             // Video Codec
             Text("Video Codec", style = MaterialTheme.typography.labelLarge)
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
@@ -251,6 +298,67 @@ fun StreamEditScreen(
                     ) {
                         Text(codec.displayName)
                     }
+                }
+            }
+
+            // YouTube account section (OAuth streams only)
+            if (stream.authType == AuthType.YOUTUBE_OAUTH && youtubeAuthManager != null) {
+                HorizontalDivider()
+                Text("YouTubeアカウント", style = MaterialTheme.typography.labelLarge)
+
+                if (isAuthenticating) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                        Text("認証中...", fontSize = 13.sp)
+                    }
+                } else if (youtubeAuthManager.isSignedIn()) {
+                    ListItem(
+                        headlineContent = { Text(channelName.ifBlank { "YouTube" }) },
+                        supportingContent = { Text("ログイン済み") },
+                        leadingContent = {
+                            Icon(
+                                Icons.Filled.AccountCircle,
+                                contentDescription = null,
+                                tint = Color(0xFFFF0000),
+                            )
+                        },
+                        trailingContent = {
+                            TextButton(onClick = {
+                                scope.launch {
+                                    onSignOutYouTube?.invoke()
+                                    if (activity != null) {
+                                        youtubeAuthManager.launchAuthFlow(activity)
+                                    }
+                                }
+                            }) {
+                                Text("切り替え")
+                            }
+                        },
+                    )
+                } else {
+                    OutlinedButton(
+                        onClick = {
+                            if (activity != null) {
+                                youtubeAuthManager.launchAuthFlow(activity)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Filled.AccountCircle, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Googleアカウントでログイン")
+                    }
+                }
+
+                if (authError != null) {
+                    Text(
+                        text = authError!!,
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 12.sp,
+                    )
                 }
             }
 
