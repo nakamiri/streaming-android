@@ -37,6 +37,10 @@ class StreamingEngine {
     private var baseAudioTimestampUs: Long = -1L
     private var totalBytesSent: Long = 0L
     private var encoderColorFormat: Int = MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible
+    private var encoderStride: Int = 0
+    private var encoderSliceHeight: Int = 0
+    private var encoderWidth: Int = 0
+    private var encoderHeight: Int = 0
 
     data class StreamState(
         val isStreaming: Boolean = false,
@@ -124,24 +128,34 @@ class StreamingEngine {
     fun onVideoFrame(buffer: ByteBuffer, width: Int, height: Int, presentationTimeUs: Long) {
         if (!_state.value.isStreaming) return
 
-        // Lazy-init video encoder with actual camera resolution
+        // Lazy-init video encoder at configured resolution (not raw camera resolution)
         if (videoEncoder == null) {
             val config = currentConfig ?: return
-            setupVideoEncoder(config, width, height)
-            Log.i(TAG, "Video encoder initialized: ${width}x${height}")
-            _state.value = _state.value.copy(videoWidth = width, videoHeight = height)
+            // Match configured resolution to frame orientation (portrait vs landscape)
+            val (encW, encH) = if (height > width) {
+                minOf(config.resolution.width, config.resolution.height) to maxOf(config.resolution.width, config.resolution.height)
+            } else {
+                maxOf(config.resolution.width, config.resolution.height) to minOf(config.resolution.width, config.resolution.height)
+            }
+            encoderWidth = encW
+            encoderHeight = encH
+            setupVideoEncoder(config, encW, encH)
+            Log.i(TAG, "Video encoder initialized: ${encW}x${encH} (camera: ${width}x${height})")
+            _state.value = _state.value.copy(videoWidth = encW, videoHeight = encH)
         }
 
         if (baseVideoTimestampUs < 0) baseVideoTimestampUs = presentationTimeUs
         val relativeUs = presentationTimeUs - baseVideoTimestampUs
         try {
-            // Apply widget overlay onto the I420 YUV frame
-            val i420Bytes = ByteArray(buffer.remaining())
-            buffer.get(i420Bytes)
-            widgetRenderer.renderOntoFrame(i420Bytes, width, height, widgetSettingsRef.get())
+            // Scale camera frame to encoder resolution if needed, then apply widget overlay
+            val scaled = YuvUtils.scaleI420(
+                ByteArray(buffer.remaining()).also { buffer.get(it) },
+                width, height, encoderWidth, encoderHeight
+            )
+            widgetRenderer.renderOntoFrame(scaled, encoderWidth, encoderHeight, widgetSettingsRef.get())
 
             // Convert I420 to the format the encoder actually expects
-            val frameBytes = convertI420ForEncoder(i420Bytes, width, height)
+            val frameBytes = convertI420ForEncoder(scaled, encoderWidth, encoderHeight)
 
             videoEncoder?.let { encoder ->
                 val inputIndex = encoder.dequeueInputBuffer(0)
@@ -227,13 +241,17 @@ class StreamingEngine {
             configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             start()
 
-            // Query actual color format the encoder uses after start()
+            // Query actual color format, stride, and slice height the encoder uses after start()
             val inputFormat = this.inputFormat
             encoderColorFormat = inputFormat.getInteger(
                 MediaFormat.KEY_COLOR_FORMAT,
                 MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible
             )
-            Log.i(TAG, "Encoder actual color format: $encoderColorFormat (0x${encoderColorFormat.toString(16)})")
+            encoderStride = if (inputFormat.containsKey(MediaFormat.KEY_STRIDE))
+                inputFormat.getInteger(MediaFormat.KEY_STRIDE) else width
+            encoderSliceHeight = if (inputFormat.containsKey(MediaFormat.KEY_SLICE_HEIGHT))
+                inputFormat.getInteger(MediaFormat.KEY_SLICE_HEIGHT) else height
+            Log.i(TAG, "Encoder actual color format: $encoderColorFormat (0x${encoderColorFormat.toString(16)}), stride=$encoderStride, sliceHeight=$encoderSliceHeight")
         }
     }
 
@@ -245,40 +263,72 @@ class StreamingEngine {
      */
     @Suppress("DEPRECATION")
     private fun convertI420ForEncoder(i420: ByteArray, width: Int, height: Int): ByteArray {
-        val ySize = width * height
-        val uvSize = ySize / 4
+        val stride = if (encoderStride > 0) encoderStride else width
+        val sliceHeight = if (encoderSliceHeight > 0) encoderSliceHeight else height
+        val uvStride = stride / 2
+        val uvSliceHeight = sliceHeight / 2
+
+        // NV12 buffer size with stride/sliceHeight padding
+        val bufferSize = stride * sliceHeight + uvStride * 2 * uvSliceHeight
+
+        val i420UOffset = width * height
+        val i420VOffset = i420UOffset + (width / 2) * (height / 2)
 
         return when (encoderColorFormat) {
-            // Semi-planar NV12: Y + interleaved UV
+            // Semi-planar NV12: Y then interleaved UV, with stride/sliceHeight alignment
             MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar,
             0x7F420888 /* COLOR_FormatYUV420Flexible often means NV12 on HW encoders */ -> {
-                val nv12 = ByteArray(ySize + ySize / 2)
-                // Copy Y plane as-is
-                System.arraycopy(i420, 0, nv12, 0, ySize)
-                // Interleave U and V
-                val uOffset = ySize
-                val vOffset = ySize + uvSize
-                var nv12Offset = ySize
-                for (i in 0 until uvSize) {
-                    nv12[nv12Offset++] = i420[uOffset + i]
-                    nv12[nv12Offset++] = i420[vOffset + i]
+                val out = ByteArray(bufferSize)
+                // Copy Y rows with stride padding
+                for (row in 0 until height) {
+                    System.arraycopy(i420, row * width, out, row * stride, width)
                 }
-                nv12
+                // Write interleaved UV rows starting after Y slice
+                val uvPlaneOffset = stride * sliceHeight
+                for (row in 0 until height / 2) {
+                    for (col in 0 until width / 2) {
+                        out[uvPlaneOffset + row * stride + col * 2] =
+                            i420[i420UOffset + row * (width / 2) + col]
+                        out[uvPlaneOffset + row * stride + col * 2 + 1] =
+                            i420[i420VOffset + row * (width / 2) + col]
+                    }
+                }
+                out
             }
-            // Planar I420 (COLOR_FormatYUV420Planar) — no conversion needed
-            MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar -> i420
-            // Unknown/flexible — try NV12 as it's the most common HW encoder format
-            else -> {
-                val nv12 = ByteArray(ySize + ySize / 2)
-                System.arraycopy(i420, 0, nv12, 0, ySize)
-                val uOffset = ySize
-                val vOffset = ySize + uvSize
-                var nv12Offset = ySize
-                for (i in 0 until uvSize) {
-                    nv12[nv12Offset++] = i420[uOffset + i]
-                    nv12[nv12Offset++] = i420[vOffset + i]
+            // Planar I420 with stride/sliceHeight alignment
+            MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar -> {
+                if (stride == width && sliceHeight == height) {
+                    i420 // No conversion needed
+                } else {
+                    val out = ByteArray(bufferSize)
+                    for (row in 0 until height) {
+                        System.arraycopy(i420, row * width, out, row * stride, width)
+                    }
+                    val uPlaneOffset = stride * sliceHeight
+                    val vPlaneOffset = uPlaneOffset + uvStride * uvSliceHeight
+                    for (row in 0 until height / 2) {
+                        System.arraycopy(i420, i420UOffset + row * (width / 2), out, uPlaneOffset + row * uvStride, width / 2)
+                        System.arraycopy(i420, i420VOffset + row * (width / 2), out, vPlaneOffset + row * uvStride, width / 2)
+                    }
+                    out
                 }
-                nv12
+            }
+            // Unknown/flexible — NV12 with stride alignment
+            else -> {
+                val out = ByteArray(bufferSize)
+                for (row in 0 until height) {
+                    System.arraycopy(i420, row * width, out, row * stride, width)
+                }
+                val uvPlaneOffset = stride * sliceHeight
+                for (row in 0 until height / 2) {
+                    for (col in 0 until width / 2) {
+                        out[uvPlaneOffset + row * stride + col * 2] =
+                            i420[i420UOffset + row * (width / 2) + col]
+                        out[uvPlaneOffset + row * stride + col * 2 + 1] =
+                            i420[i420VOffset + row * (width / 2) + col]
+                    }
+                }
+                out
             }
         }
     }

@@ -71,4 +71,33 @@ object YuvUtils {
             }
         }
     }
+
+    // Nearest-neighbor I420 scale. Works for both up/downscale.
+    fun scaleI420(src: ByteArray, srcW: Int, srcH: Int, dstW: Int, dstH: Int): ByteArray {
+        if (srcW == dstW && srcH == dstH) return src
+        val dst = ByteArray(dstW * dstH * 3 / 2)
+        // Y plane
+        for (y in 0 until dstH) {
+            val sy = y * srcH / dstH
+            for (x in 0 until dstW) {
+                dst[y * dstW + x] = src[sy * srcW + x * srcW / dstW]
+            }
+        }
+        // U and V planes (half size)
+        val srcUOff = srcW * srcH
+        val srcVOff = srcUOff + (srcW / 2) * (srcH / 2)
+        val dstUOff = dstW * dstH
+        val dstVOff = dstUOff + (dstW / 2) * (dstH / 2)
+        val uvSrcW = srcW / 2; val uvSrcH = srcH / 2
+        val uvDstW = dstW / 2; val uvDstH = dstH / 2
+        for (y in 0 until uvDstH) {
+            val sy = y * uvSrcH / uvDstH
+            for (x in 0 until uvDstW) {
+                val sx = x * uvSrcW / uvDstW
+                dst[dstUOff + y * uvDstW + x] = src[srcUOff + sy * uvSrcW + sx]
+                dst[dstVOff + y * uvDstW + x] = src[srcVOff + sy * uvSrcW + sx]
+            }
+        }
+        return dst
+    }
 }

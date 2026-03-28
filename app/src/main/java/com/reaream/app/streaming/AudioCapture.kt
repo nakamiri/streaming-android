@@ -38,7 +38,7 @@ class AudioCapture(
         val bufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat) * 2
 
         audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.CAMCORDER,
+            MediaRecorder.AudioSource.MIC,
             sampleRate,
             channelConfig,
             audioFormat,

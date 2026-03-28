@@ -143,6 +143,96 @@ class YuvUtilsTest {
         assertArrayEquals(byteArrayOf(3, 6, 2, 5, 1, 4), dst)
     }
 
+    // ── scaleI420 tests ──
+
+    @Test
+    fun `scaleI420 same size returns same data`() {
+        val w = 4; val h = 4
+        val src = ByteArray(w * h * 3 / 2) { it.toByte() }
+        val result = YuvUtils.scaleI420(src, w, h, w, h)
+        assertArrayEquals(src, result)
+    }
+
+    @Test
+    fun `scaleI420 returns identity reference when same size`() {
+        val w = 4; val h = 4
+        val src = ByteArray(w * h * 3 / 2)
+        val result = YuvUtils.scaleI420(src, w, h, w, h)
+        assertSame(src, result)
+    }
+
+    @Test
+    fun `scaleI420 downscale output has correct size`() {
+        val srcW = 8; val srcH = 8
+        val dstW = 4; val dstH = 4
+        val src = ByteArray(srcW * srcH * 3 / 2) { it.toByte() }
+        val result = YuvUtils.scaleI420(src, srcW, srcH, dstW, dstH)
+        assertEquals(dstW * dstH * 3 / 2, result.size)
+    }
+
+    @Test
+    fun `scaleI420 upscale output has correct size`() {
+        val srcW = 4; val srcH = 4
+        val dstW = 8; val dstH = 8
+        val src = ByteArray(srcW * srcH * 3 / 2) { it.toByte() }
+        val result = YuvUtils.scaleI420(src, srcW, srcH, dstW, dstH)
+        assertEquals(dstW * dstH * 3 / 2, result.size)
+    }
+
+    @Test
+    fun `scaleI420 2x downscale Y plane uses nearest neighbor`() {
+        // 4x4 → 2x2 nearest-neighbor: picks pixels at (0,0),(2,0),(0,2),(2,2)
+        val srcW = 4; val srcH = 4
+        val src = ByteArray(srcW * srcH * 3 / 2)
+        // Fill Y plane:
+        // [ 10 11 12 13 ]
+        // [ 20 21 22 23 ]
+        // [ 30 31 32 33 ]
+        // [ 40 41 42 43 ]
+        for (y in 0 until srcH) {
+            for (x in 0 until srcW) {
+                src[y * srcW + x] = ((y + 1) * 10 + x).toByte()
+            }
+        }
+
+        val result = YuvUtils.scaleI420(src, srcW, srcH, 2, 2)
+        // dst(0,0) ← src(0*4/2, 0*4/2) = src(0,0) = 10
+        assertEquals(10.toByte(), result[0])
+        // dst(1,0) ← src(0, 1*4/2) = src(0, 2) = 12
+        assertEquals(12.toByte(), result[1])
+        // dst(0,1) ← src(1*4/2, 0) = src(2, 0) = 30
+        assertEquals(30.toByte(), result[2])
+        // dst(1,1) ← src(2, 2) = 32
+        assertEquals(32.toByte(), result[3])
+    }
+
+    @Test
+    fun `scaleI420 non-uniform scale produces correct output size`() {
+        // 8x4 → 4x2
+        val srcW = 8; val srcH = 4
+        val dstW = 4; val dstH = 2
+        val src = ByteArray(srcW * srcH * 3 / 2)
+        val result = YuvUtils.scaleI420(src, srcW, srcH, dstW, dstH)
+        assertEquals(dstW * dstH * 3 / 2, result.size)
+    }
+
+    @Test
+    fun `scaleI420 preserves UV plane structure`() {
+        // 4x4 → 2x2: U plane is 1x1, V plane is 1x1
+        val srcW = 4; val srcH = 4
+        val src = ByteArray(srcW * srcH * 3 / 2)
+        val srcUOff = srcW * srcH     // 16
+        val srcVOff = srcUOff + 2 * 2 // 20
+        src[srcUOff] = 50  // U(0,0)
+        src[srcVOff] = 90  // V(0,0)
+
+        val result = YuvUtils.scaleI420(src, srcW, srcH, 2, 2)
+        val dstUOff = 2 * 2     // 4
+        val dstVOff = dstUOff + 1 // 5
+        assertEquals(50.toByte(), result[dstUOff])
+        assertEquals(90.toByte(), result[dstVOff])
+    }
+
     @Test
     fun `rotatePlane180 basic verification`() {
         // 3x2 plane:
