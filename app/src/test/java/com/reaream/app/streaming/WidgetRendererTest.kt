@@ -3,6 +3,8 @@ package com.reaream.app.streaming
 import android.location.Location
 import com.reaream.app.data.model.ClockWidgetConfig
 import com.reaream.app.data.model.LocationWidgetConfig
+import com.reaream.app.data.model.SpeedUnit
+import com.reaream.app.data.model.SpeedWidgetConfig
 import com.reaream.app.data.model.WidgetSettings
 import org.junit.Assert.*
 import org.junit.After
@@ -98,6 +100,32 @@ class WidgetRendererTest {
     fun `speed is stored as AtomicReference`() {
         renderer.currentSpeedKmh.set(42.5f)
         assertEquals(42.5f, renderer.currentSpeedKmh.get(), 0.01f)
+    }
+
+    @Test
+    fun `renderOntoFrame with speed enabled does not crash`() {
+        val w = 640; val h = 480
+        val frame = ByteArray(w * h * 3 / 2) { 100.toByte() }
+
+        renderer.currentSpeedKmh.set(55.0f)
+
+        val settings = WidgetSettings(
+            speedWidget = SpeedWidgetConfig(enabled = true, x = 0.1f, y = 0.1f)
+        )
+        renderer.renderOntoFrame(frame, w, h, settings)
+    }
+
+    @Test
+    fun `renderOntoFrame with speed and mph unit does not crash`() {
+        val w = 640; val h = 480
+        val frame = ByteArray(w * h * 3 / 2) { 100.toByte() }
+
+        renderer.currentSpeedKmh.set(100.0f)
+
+        val settings = WidgetSettings(
+            speedWidget = SpeedWidgetConfig(enabled = true, unit = SpeedUnit.MPH)
+        )
+        renderer.renderOntoFrame(frame, w, h, settings)
     }
 
     @Test
