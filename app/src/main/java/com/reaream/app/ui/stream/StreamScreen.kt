@@ -85,7 +85,7 @@ fun StreamScreen(
                     chatMessages = chatMessages,
                     torchEnabled = torchEnabled,
                     zoomRatio = zoomRatio,
-                    hasWidgets = settings.widgets.clockWidget.enabled || settings.widgets.locationWidget.enabled,
+                    hasWidgets = settings.widgets.clockWidget.enabled || settings.widgets.locationWidget.enabled || settings.widgets.speedWidget.enabled,
                     onToggleStreaming = onToggleStreaming,
                     onToggleMute = onToggleMute,
                     onToggleTorch = onToggleTorch,
@@ -101,7 +101,7 @@ fun StreamScreen(
                     chatMessages = chatMessages,
                     torchEnabled = torchEnabled,
                     zoomRatio = zoomRatio,
-                    hasWidgets = settings.widgets.clockWidget.enabled || settings.widgets.locationWidget.enabled,
+                    hasWidgets = settings.widgets.clockWidget.enabled || settings.widgets.locationWidget.enabled || settings.widgets.speedWidget.enabled,
                     onToggleStreaming = onToggleStreaming,
                     onToggleMute = onToggleMute,
                     onToggleTorch = onToggleTorch,
@@ -145,6 +145,11 @@ fun StreamScreen(
                                     x = com.reaream.app.data.model.LocationWidgetConfig().x,
                                     y = com.reaream.app.data.model.LocationWidgetConfig().y,
                                     fontSize = com.reaream.app.data.model.LocationWidgetConfig().fontSize,
+                                ),
+                                speedWidget = settings.widgets.speedWidget.copy(
+                                    x = com.reaream.app.data.model.SpeedWidgetConfig().x,
+                                    y = com.reaream.app.data.model.SpeedWidgetConfig().y,
+                                    fontSize = com.reaream.app.data.model.SpeedWidgetConfig().fontSize,
                                 ),
                             )
                         )

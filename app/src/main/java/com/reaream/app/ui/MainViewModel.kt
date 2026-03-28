@@ -34,7 +34,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 streamingEngine.widgetSettingsRef.set(s.widgets)
 
                 // Start/stop location updates based on widget config
-                if (s.widgets.locationWidget.enabled) {
+                if (s.widgets.locationWidget.enabled || s.widgets.speedWidget.enabled) {
                     locationProvider.startUpdates()
                 } else {
                     locationProvider.stopUpdates()

@@ -61,6 +61,7 @@ data class RecordingSettings(
 data class WidgetSettings(
     val clockWidget: ClockWidgetConfig = ClockWidgetConfig(),
     val locationWidget: LocationWidgetConfig = LocationWidgetConfig(),
+    val speedWidget: SpeedWidgetConfig = SpeedWidgetConfig(),
 )
 
 @Serializable
@@ -79,6 +80,21 @@ data class LocationWidgetConfig(
     val y: Float = 0.82f,
     val fontSize: Int = 12,
 )
+
+@Serializable
+data class SpeedWidgetConfig(
+    val enabled: Boolean = false,
+    val x: Float = 0.02f,
+    val y: Float = 0.72f,
+    val fontSize: Int = 14,
+    val unit: SpeedUnit = SpeedUnit.KMH,
+)
+
+@Serializable
+enum class SpeedUnit(val displayName: String, val label: String) {
+    KMH("km/h", "km/h"),
+    MPH("mph", "mph"),
+}
 
 @Serializable
 enum class ClockFormat(val pattern: String, val displayName: String) {

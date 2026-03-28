@@ -85,4 +85,45 @@ class WidgetSettingsTest {
         assertNotNull(appSettings.widgets)
         assertFalse(appSettings.widgets.clockWidget.enabled)
     }
+
+    @Test
+    fun `speed widget default position is bottom left area`() {
+        val config = SpeedWidgetConfig()
+        assertFalse(config.enabled)
+        assertTrue(config.x < 0.5f)
+        assertTrue(config.y > 0.5f)
+        assertEquals(14, config.fontSize)
+        assertEquals(SpeedUnit.KMH, config.unit)
+    }
+
+    @Test
+    fun `speed unit enum values`() {
+        assertEquals("km/h", SpeedUnit.KMH.label)
+        assertEquals("mph", SpeedUnit.MPH.label)
+        assertEquals(2, SpeedUnit.entries.size)
+    }
+
+    @Test
+    fun `speed widget serialization round trip`() {
+        val config = SpeedWidgetConfig(
+            enabled = true,
+            x = 0.5f,
+            y = 0.5f,
+            fontSize = 20,
+            unit = SpeedUnit.MPH,
+        )
+        val settings = WidgetSettings(speedWidget = config)
+        val serialized = json.encodeToString(WidgetSettings.serializer(), settings)
+        val deserialized = json.decodeFromString(WidgetSettings.serializer(), serialized)
+        assertEquals(settings, deserialized)
+        assertEquals(SpeedUnit.MPH, deserialized.speedWidget.unit)
+    }
+
+    @Test
+    fun `widget settings without speedWidget deserializes with defaults`() {
+        val old = """{"clockWidget":{"enabled":false},"locationWidget":{"enabled":false}}"""
+        val settings = json.decodeFromString(WidgetSettings.serializer(), old)
+        assertFalse(settings.speedWidget.enabled)
+        assertEquals(SpeedUnit.KMH, settings.speedWidget.unit)
+    }
 }
