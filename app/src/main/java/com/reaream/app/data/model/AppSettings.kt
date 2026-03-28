@@ -68,24 +68,24 @@ data class WidgetSettings(
 data class ClockWidgetConfig(
     val enabled: Boolean = false,
     val format: ClockFormat = ClockFormat.HH_MM_SS,
-    val x: Float = 0.65f,
-    val y: Float = 0.02f,
+    val x: Float = 1.0f,
+    val y: Float = 0.01f,
     val fontSize: Int = 14,
 )
 
 @Serializable
 data class LocationWidgetConfig(
     val enabled: Boolean = false,
-    val x: Float = 0.02f,
-    val y: Float = 0.82f,
+    val x: Float = 1.0f,
+    val y: Float = 0.10f,
     val fontSize: Int = 12,
 )
 
 @Serializable
 data class SpeedWidgetConfig(
     val enabled: Boolean = false,
-    val x: Float = 0.72f,
-    val y: Float = 0.06f,
+    val x: Float = 1.0f,
+    val y: Float = 0.055f,
     val fontSize: Int = 14,
     val unit: SpeedUnit = SpeedUnit.KMH,
 )
