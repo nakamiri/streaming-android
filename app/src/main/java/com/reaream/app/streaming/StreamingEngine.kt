@@ -28,7 +28,7 @@ class StreamingEngine {
     val widgetRenderer = WidgetRenderer()
     val widgetSettingsRef = AtomicReference(WidgetSettings())
 
-    private var videoEncoder: MediaCodec? = null
+    @Volatile private var videoEncoder: MediaCodec? = null
     private var audioEncoder: MediaCodec? = null
     private var connection: StreamConnection? = null
     private var currentConfig: StreamConfig? = null
@@ -47,6 +47,13 @@ class StreamingEngine {
     private var scaledBuffer: ByteArray? = null     // after scaleI420 (encW*encH*3/2)
     private var encoderInputBuffer: ByteArray? = null // after format conversion (stride-padded)
 
+    // Adaptive quality: resolution step-down when network/CPU can't keep up
+    private var resolutionSteps: List<Pair<Int, Int>> = emptyList() // ordered from best to worst
+    private var currentResStep: Int = 0
+    private var poorQualityStreak: Int = 0
+    private var goodQualityStreak: Int = 0
+    private var configuredBitrateKbps: Int = 0
+
     data class StreamState(
         val isStreaming: Boolean = false,
         val isConnecting: Boolean = false,
@@ -57,6 +64,8 @@ class StreamingEngine {
         val connectionQuality: ConnectionQuality = ConnectionQuality.UNKNOWN,
         val videoWidth: Int = 0,
         val videoHeight: Int = 0,
+        // 0 = configured resolution, 1+ = stepped down
+        val adaptiveStepDown: Int = 0,
     )
 
     enum class ConnectionQuality { UNKNOWN, GOOD, FAIR, POOR }
@@ -146,6 +155,11 @@ class StreamingEngine {
             encoderHeight = encH
             setupVideoEncoder(config, encW, encH)
             Log.i(TAG, "Video encoder initialized: ${encW}x${encH} (camera: ${width}x${height})")
+            configuredBitrateKbps = config.videoBitrate
+            if (config.adaptiveBitrate) {
+                resolutionSteps = buildResolutionSteps(encW, encH)
+                currentResStep = 0
+            }
             _state.value = _state.value.copy(videoWidth = encW, videoHeight = encH)
         }
 
@@ -406,6 +420,10 @@ class StreamingEngine {
         encoderInputBuffer = null
         baseVideoTimestampUs = -1L
         baseAudioTimestampUs = -1L
+        resolutionSteps = emptyList()
+        currentResStep = 0
+        poorQualityStreak = 0
+        goodQualityStreak = 0
     }
 
     private fun launchStatsUpdater() {
@@ -418,9 +436,11 @@ class StreamingEngine {
                 lastBytes = totalBytesSent
                 val bitrateKbps = ((bytesDelta * 8) / 1000).toInt()
 
+                // Quality based on ratio to configured bitrate (not absolute threshold)
+                val ratio = if (configuredBitrateKbps > 0) bitrateKbps.toFloat() / configuredBitrateKbps else 1f
                 val quality = when {
-                    bitrateKbps <= 0 -> ConnectionQuality.POOR
-                    bitrateKbps < 500 -> ConnectionQuality.FAIR
+                    bitrateKbps <= 0 || ratio < 0.4f -> ConnectionQuality.POOR
+                    ratio < 0.75f -> ConnectionQuality.FAIR
                     else -> ConnectionQuality.GOOD
                 }
 
@@ -429,8 +449,78 @@ class StreamingEngine {
                     uptime = elapsed,
                     connectionQuality = quality,
                 )
+
+                // Adaptive quality: step resolution down/up based on sustained quality
+                val config = currentConfig
+                if (config != null && config.adaptiveBitrate && resolutionSteps.size > 1) {
+                    when (quality) {
+                        ConnectionQuality.POOR -> {
+                            poorQualityStreak++
+                            goodQualityStreak = 0
+                        }
+                        ConnectionQuality.GOOD -> {
+                            goodQualityStreak++
+                            poorQualityStreak = 0
+                        }
+                        else -> {
+                            poorQualityStreak = 0
+                            goodQualityStreak = 0
+                        }
+                    }
+                    // Step down after 3s poor quality (prioritize FPS over resolution)
+                    if (poorQualityStreak >= 3 && currentResStep < resolutionSteps.size - 1) {
+                        poorQualityStreak = 0
+                        currentResStep++
+                        val (newW, newH) = resolutionSteps[currentResStep]
+                        Log.i(TAG, "Adaptive: stepping down to ${newW}x${newH} (step $currentResStep)")
+                        reinitVideoEncoder(config, newW, newH)
+                    }
+                    // Step up after 10s good quality
+                    if (goodQualityStreak >= 10 && currentResStep > 0) {
+                        goodQualityStreak = 0
+                        currentResStep--
+                        val (newW, newH) = resolutionSteps[currentResStep]
+                        Log.i(TAG, "Adaptive: stepping up to ${newW}x${newH} (step $currentResStep)")
+                        reinitVideoEncoder(config, newW, newH)
+                    }
+                }
             }
         }
+    }
+
+    private fun buildResolutionSteps(encW: Int, encH: Int): List<Pair<Int, Int>> {
+        val isPortrait = encH > encW
+        val longSide = maxOf(encW, encH)
+        return buildList {
+            add(encW to encH)
+            if (longSide > 1280) add(if (isPortrait) 720 to 1280 else 1280 to 720)
+            if (longSide > 854) add(if (isPortrait) 480 to 854 else 854 to 480)
+        }
+    }
+
+    /**
+     * Reinitialize video encoder at a different resolution mid-stream.
+     * Sets videoEncoder = null first so onVideoFrame skips during the brief transition.
+     */
+    private fun reinitVideoEncoder(config: StreamConfig, newW: Int, newH: Int) {
+        val old = videoEncoder
+        videoEncoder = null // onVideoFrame will skip (frames dropped during transition)
+        try {
+            old?.stop()
+            old?.release()
+        } catch (_: Exception) {}
+
+        encoderWidth = newW
+        encoderHeight = newH
+        scaledBuffer = ByteArray(newW * newH * 3 / 2)
+        encoderInputBuffer = null // reallocated in setupVideoEncoder after stride is known
+
+        setupVideoEncoder(config, newW, newH)
+        _state.value = _state.value.copy(
+            videoWidth = newW,
+            videoHeight = newH,
+            adaptiveStepDown = currentResStep,
+        )
     }
 
     fun release() {
