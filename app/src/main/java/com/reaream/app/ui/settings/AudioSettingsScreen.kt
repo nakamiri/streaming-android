@@ -16,7 +16,7 @@ import com.reaream.app.ui.Screen
 @Composable
 fun AudioSettingsScreen(
     audio: AudioSettings,
-    onNavigate: (Screen) -> Unit,
+    onBack: () -> Unit,
     onUpdate: (AudioSettings) -> Unit,
 ) {
     Scaffold(
@@ -24,7 +24,7 @@ fun AudioSettingsScreen(
             TopAppBar(
                 title = { Text("Audio") },
                 navigationIcon = {
-                    IconButton(onClick = { onNavigate(Screen.Settings) }) {
+                    IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },

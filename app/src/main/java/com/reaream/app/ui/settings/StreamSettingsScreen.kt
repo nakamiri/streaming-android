@@ -19,6 +19,7 @@ import com.reaream.app.ui.Screen
 fun StreamSettingsScreen(
     settings: AppSettings,
     onNavigate: (Screen) -> Unit,
+    onBack: () -> Unit,
     onSelectStream: (Int) -> Unit,
     onDeleteStream: (Int) -> Unit,
 ) {
@@ -27,7 +28,7 @@ fun StreamSettingsScreen(
             TopAppBar(
                 title = { Text("Streams") },
                 navigationIcon = {
-                    IconButton(onClick = { onNavigate(Screen.Settings) }) {
+                    IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },

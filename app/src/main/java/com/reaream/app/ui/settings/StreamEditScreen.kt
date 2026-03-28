@@ -20,7 +20,7 @@ import com.reaream.app.ui.Screen
 fun StreamEditScreen(
     streamIndex: Int,
     settings: AppSettings,
-    onNavigate: (Screen) -> Unit,
+    onBack: () -> Unit,
     onSave: (Int, StreamConfig) -> Unit,
 ) {
     val stream = settings.streams.getOrElse(streamIndex) { StreamConfig() }
@@ -41,7 +41,7 @@ fun StreamEditScreen(
             TopAppBar(
                 title = { Text("Edit Stream") },
                 navigationIcon = {
-                    IconButton(onClick = { onNavigate(Screen.StreamSettings) }) {
+                    IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -62,7 +62,7 @@ fun StreamEditScreen(
                                 srtLatency = srtLatency.toIntOrNull() ?: 2000,
                             )
                         )
-                        onNavigate(Screen.StreamSettings)
+                        onBack()
                     }) {
                         Text("Save")
                     }
