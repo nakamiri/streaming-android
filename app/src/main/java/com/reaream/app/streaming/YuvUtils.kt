@@ -76,6 +76,16 @@ object YuvUtils {
     fun scaleI420(src: ByteArray, srcW: Int, srcH: Int, dstW: Int, dstH: Int): ByteArray {
         if (srcW == dstW && srcH == dstH) return src
         val dst = ByteArray(dstW * dstH * 3 / 2)
+        scaleI420Into(src, srcW, srcH, dst, dstW, dstH)
+        return dst
+    }
+
+    // In-place version that writes into a pre-allocated dst buffer to avoid allocation per frame.
+    fun scaleI420Into(src: ByteArray, srcW: Int, srcH: Int, dst: ByteArray, dstW: Int, dstH: Int) {
+        if (srcW == dstW && srcH == dstH) {
+            System.arraycopy(src, 0, dst, 0, src.size.coerceAtMost(dst.size))
+            return
+        }
         // Y plane
         for (y in 0 until dstH) {
             val sy = y * srcH / dstH
@@ -98,6 +108,5 @@ object YuvUtils {
                 dst[dstVOff + y * uvDstW + x] = src[srcVOff + sy * uvSrcW + sx]
             }
         }
-        return dst
     }
 }
