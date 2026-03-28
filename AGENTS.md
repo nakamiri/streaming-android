@@ -172,6 +172,11 @@ YouTube アカウント連携で配信する機能。Chrome Custom Tabs + PKCE O
 - `StreamWizardScreen.kt` — ウィザード UI（認証/配信枠設定ステップ）
 - `StreamConfig.kt` — `AuthType.YOUTUBE_OAUTH` / `YouTubePrivacy` enum
 
+### 未確認機能
+
+動作確認が取れていない機能の一覧は [README.md の TODO セクション](README.md#todo) を参照。
+実機テストが必要な項目（トーチ、映像安定化、1080p）と、外部サービスのアカウントが必要な項目（Twitch チャット、RTMPS）がある。
+
 ### ログ確認
 
 ```bash
