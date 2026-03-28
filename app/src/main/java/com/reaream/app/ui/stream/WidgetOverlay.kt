@@ -56,6 +56,8 @@ fun WidgetOverlay(
     modifier: Modifier = Modifier,
 ) {
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
+    // Use updatedState so lambdas always see latest widgetSettings
+    val currentWidgets by rememberUpdatedState(widgetSettings)
 
     Box(
         modifier = modifier
@@ -65,40 +67,39 @@ fun WidgetOverlay(
         if (containerSize.width == 0 || containerSize.height == 0) return@Box
 
         if (widgetSettings.mapWidget.enabled && mapBitmap != null) {
-            val config = widgetSettings.mapWidget
             DraggableWidget(
-                x = config.x,
-                y = config.y,
-                fontSize = config.sizeDp,
+                x = widgetSettings.mapWidget.x,
+                y = widgetSettings.mapWidget.y,
+                fontSize = widgetSettings.mapWidget.sizeDp,
                 containerSize = containerSize,
                 isEditMode = isEditMode,
+                minSize = 60,
+                maxSize = 400,
+                sizeStep = 10,
                 onPositionChange = { newX, newY ->
-                    onUpdateWidgets?.invoke(
-                        widgetSettings.copy(mapWidget = config.copy(x = newX, y = newY))
-                    )
+                    val w = currentWidgets
+                    onUpdateWidgets?.invoke(w.copy(mapWidget = w.mapWidget.copy(x = newX, y = newY)))
                 },
                 onFontSizeChange = { newSize ->
-                    onUpdateWidgets?.invoke(
-                        widgetSettings.copy(mapWidget = config.copy(sizeDp = newSize.coerceIn(60, 200)))
-                    )
+                    val w = currentWidgets
+                    onUpdateWidgets?.invoke(w.copy(mapWidget = w.mapWidget.copy(sizeDp = newSize.coerceIn(60, 400))))
                 },
                 extraEditContent = if (isEditMode) {
                     {
-                        // Map zoom controls
+                        val mapConfig = currentWidgets.mapWidget
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(top = 2.dp),
                         ) {
                             SizeButton(icon = Icons.Filled.ZoomOut) {
-                                if (config.zoom > 10) {
-                                    onUpdateWidgets?.invoke(
-                                        widgetSettings.copy(mapWidget = config.copy(zoom = config.zoom - 1))
-                                    )
+                                if (mapConfig.zoom > 10) {
+                                    val w = currentWidgets
+                                    onUpdateWidgets?.invoke(w.copy(mapWidget = w.mapWidget.copy(zoom = w.mapWidget.zoom - 1)))
                                 }
                             }
                             Text(
-                                text = "z${config.zoom}",
+                                text = "z${mapConfig.zoom}",
                                 color = Color.White,
                                 fontSize = 10.sp,
                                 modifier = Modifier
@@ -106,45 +107,40 @@ fun WidgetOverlay(
                                     .padding(horizontal = 6.dp, vertical = 2.dp),
                             )
                             SizeButton(icon = Icons.Filled.ZoomIn) {
-                                if (config.zoom < 18) {
-                                    onUpdateWidgets?.invoke(
-                                        widgetSettings.copy(mapWidget = config.copy(zoom = config.zoom + 1))
-                                    )
+                                if (mapConfig.zoom < 18) {
+                                    val w = currentWidgets
+                                    onUpdateWidgets?.invoke(w.copy(mapWidget = w.mapWidget.copy(zoom = w.mapWidget.zoom + 1)))
                                 }
                             }
                         }
                     }
                 } else null,
             ) {
-                MapWidgetView(bitmap = mapBitmap, sizeDp = config.sizeDp)
+                MapWidgetView(bitmap = mapBitmap, sizeDp = widgetSettings.mapWidget.sizeDp)
             }
         }
 
         if (widgetSettings.clockWidget.enabled) {
-            val config = widgetSettings.clockWidget
             DraggableWidget(
-                x = config.x,
-                y = config.y,
-                fontSize = config.fontSize,
+                x = widgetSettings.clockWidget.x,
+                y = widgetSettings.clockWidget.y,
+                fontSize = widgetSettings.clockWidget.fontSize,
                 containerSize = containerSize,
                 isEditMode = isEditMode,
                 onPositionChange = { newX, newY ->
-                    onUpdateWidgets?.invoke(
-                        widgetSettings.copy(clockWidget = config.copy(x = newX, y = newY))
-                    )
+                    val w = currentWidgets
+                    onUpdateWidgets?.invoke(w.copy(clockWidget = w.clockWidget.copy(x = newX, y = newY)))
                 },
                 onFontSizeChange = { newSize ->
-                    onUpdateWidgets?.invoke(
-                        widgetSettings.copy(clockWidget = config.copy(fontSize = newSize))
-                    )
+                    val w = currentWidgets
+                    onUpdateWidgets?.invoke(w.copy(clockWidget = w.clockWidget.copy(fontSize = newSize)))
                 },
             ) {
-                ClockContent(format = config.format.pattern, fontSize = config.fontSize)
+                ClockContent(format = widgetSettings.clockWidget.format.pattern, fontSize = widgetSettings.clockWidget.fontSize)
             }
         }
 
         if (widgetSettings.locationWidget.enabled) {
-            val config = widgetSettings.locationWidget
             val text = when {
                 currentAddress != null -> currentAddress
                 currentLocation != null -> String.format(
@@ -155,50 +151,46 @@ fun WidgetOverlay(
 
             if (text != null) {
                 DraggableWidget(
-                    x = config.x,
-                    y = config.y,
-                    fontSize = config.fontSize,
+                    x = widgetSettings.locationWidget.x,
+                    y = widgetSettings.locationWidget.y,
+                    fontSize = widgetSettings.locationWidget.fontSize,
                     containerSize = containerSize,
                     isEditMode = isEditMode,
                     onPositionChange = { newX, newY ->
-                        onUpdateWidgets?.invoke(
-                            widgetSettings.copy(locationWidget = config.copy(x = newX, y = newY))
-                        )
+                        val w = currentWidgets
+                        onUpdateWidgets?.invoke(w.copy(locationWidget = w.locationWidget.copy(x = newX, y = newY)))
                     },
                     onFontSizeChange = { newSize ->
-                        onUpdateWidgets?.invoke(
-                            widgetSettings.copy(locationWidget = config.copy(fontSize = newSize))
-                        )
+                        val w = currentWidgets
+                        onUpdateWidgets?.invoke(w.copy(locationWidget = w.locationWidget.copy(fontSize = newSize)))
                     },
                 ) {
-                    WidgetBadge(text = text, fontSize = config.fontSize)
+                    WidgetBadge(text = text, fontSize = widgetSettings.locationWidget.fontSize)
                 }
             }
         }
 
         if (widgetSettings.speedWidget.enabled && speedKmh >= 0f) {
-            val config = widgetSettings.speedWidget
-            val value = if (config.unit == com.reaream.app.data.model.SpeedUnit.MPH) speedKmh * 0.621371f else speedKmh
-            val text = String.format(Locale.US, "%.0f %s", value, config.unit.label)
+            val speedConfig = widgetSettings.speedWidget
+            val value = if (speedConfig.unit == com.reaream.app.data.model.SpeedUnit.MPH) speedKmh * 0.621371f else speedKmh
+            val text = String.format(Locale.US, "%.0f %s", value, speedConfig.unit.label)
 
             DraggableWidget(
-                x = config.x,
-                y = config.y,
-                fontSize = config.fontSize,
+                x = speedConfig.x,
+                y = speedConfig.y,
+                fontSize = speedConfig.fontSize,
                 containerSize = containerSize,
                 isEditMode = isEditMode,
                 onPositionChange = { newX, newY ->
-                    onUpdateWidgets?.invoke(
-                        widgetSettings.copy(speedWidget = config.copy(x = newX, y = newY))
-                    )
+                    val w = currentWidgets
+                    onUpdateWidgets?.invoke(w.copy(speedWidget = w.speedWidget.copy(x = newX, y = newY)))
                 },
                 onFontSizeChange = { newSize ->
-                    onUpdateWidgets?.invoke(
-                        widgetSettings.copy(speedWidget = config.copy(fontSize = newSize))
-                    )
+                    val w = currentWidgets
+                    onUpdateWidgets?.invoke(w.copy(speedWidget = w.speedWidget.copy(fontSize = newSize)))
                 },
             ) {
-                WidgetBadge(text = text, fontSize = config.fontSize)
+                WidgetBadge(text = text, fontSize = speedConfig.fontSize)
             }
         }
 
@@ -249,12 +241,24 @@ private fun DraggableWidget(
     isEditMode: Boolean,
     onPositionChange: (Float, Float) -> Unit,
     onFontSizeChange: (Int) -> Unit,
+    minSize: Int = 8,
+    maxSize: Int = 60,
+    sizeStep: Int = 2,
     extraEditContent: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     var widgetSize by remember { mutableStateOf(IntSize.Zero) }
-    var offsetX by remember(x, containerSize) { mutableFloatStateOf(x * containerSize.width) }
-    var offsetY by remember(y, containerSize) { mutableFloatStateOf(y * containerSize.height) }
+    var offsetX by remember { mutableFloatStateOf(x * containerSize.width) }
+    var offsetY by remember { mutableFloatStateOf(y * containerSize.height) }
+    var isDragging by remember { mutableStateOf(false) }
+
+    // Sync from external state changes (e.g. reset), but not during drag
+    LaunchedEffect(x, y, containerSize) {
+        if (!isDragging) {
+            offsetX = x * containerSize.width
+            offsetY = y * containerSize.height
+        }
+    }
 
     // Clamp to prevent overflow on initial layout
     val clampedX = offsetX.coerceIn(0f, (containerSize.width - widgetSize.width).coerceAtLeast(0).toFloat())
@@ -269,7 +273,11 @@ private fun DraggableWidget(
                     Modifier
                         .border(1.dp, Color(0xFFFFC107), RoundedCornerShape(6.dp))
                         .pointerInput(Unit) {
-                            detectDragGestures { change, dragAmount ->
+                            detectDragGestures(
+                                onDragStart = { isDragging = true },
+                                onDragEnd = { isDragging = false },
+                                onDragCancel = { isDragging = false },
+                            ) { change, dragAmount ->
                                 change.consume()
                                 val maxX = (containerSize.width - widgetSize.width).coerceAtLeast(0).toFloat()
                                 val maxY = (containerSize.height - widgetSize.height).coerceAtLeast(0).toFloat()
@@ -292,7 +300,7 @@ private fun DraggableWidget(
                     modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 2.dp),
                 ) {
                     SizeButton(icon = Icons.Filled.Remove) {
-                        if (fontSize > 8) onFontSizeChange(fontSize - 2)
+                        if (fontSize > minSize) onFontSizeChange(fontSize - sizeStep)
                     }
                     Text(
                         text = "${fontSize}",
@@ -303,7 +311,7 @@ private fun DraggableWidget(
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                     )
                     SizeButton(icon = Icons.Filled.Add) {
-                        if (fontSize < 40) onFontSizeChange(fontSize + 2)
+                        if (fontSize < maxSize) onFontSizeChange(fontSize + sizeStep)
                     }
                 }
                 extraEditContent?.invoke()
