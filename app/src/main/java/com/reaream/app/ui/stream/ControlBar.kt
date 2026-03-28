@@ -30,6 +30,8 @@ fun ControlBar(
     torchEnabled: Boolean,
     isLandscape: Boolean,
     zoomRatio: Float = 1.0f,
+    minZoomRatio: Float = 1.0f,
+    maxZoomRatio: Float = 10.0f,
     hasWidgets: Boolean = false,
     onToggleStreaming: () -> Unit,
     onToggleMute: () -> Unit,
@@ -88,7 +90,7 @@ fun ControlBar(
                     .padding(8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                ZoomSelector(zoomRatio = zoomRatio, onZoomChange = onZoomChange, isLandscape = true)
+                ZoomSelector(zoomRatio = zoomRatio, minZoomRatio = minZoomRatio, maxZoomRatio = maxZoomRatio, onZoomChange = onZoomChange, isLandscape = true)
             }
 
             // Right column: controls (scrollable)
@@ -146,7 +148,7 @@ fun ControlBar(
                 .padding(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            ZoomSelector(zoomRatio = zoomRatio, onZoomChange = onZoomChange, isLandscape = false)
+            ZoomSelector(zoomRatio = zoomRatio, minZoomRatio = minZoomRatio, maxZoomRatio = maxZoomRatio, onZoomChange = onZoomChange, isLandscape = false)
             Spacer(modifier = Modifier.height(8.dp))
             Row(
                 horizontalArrangement = Arrangement.SpaceEvenly,
@@ -190,13 +192,27 @@ fun ControlBar(
     }
 }
 
+private fun buildZoomPresets(minZoom: Float, maxZoom: Float): List<Float> {
+    val presets = mutableListOf<Float>()
+    // Include ultra-wide if the camera supports below 1x
+    if (minZoom < 0.95f) presets.add(minZoom)
+    presets.add(1.0f)
+    // Add telephoto steps up to maxZoom
+    for (tele in listOf(2f, 3f, 5f, 10f)) {
+        if (tele <= maxZoom + 0.5f) presets.add(tele)
+    }
+    return presets
+}
+
 @Composable
 private fun ZoomSelector(
     zoomRatio: Float,
+    minZoomRatio: Float,
+    maxZoomRatio: Float,
     onZoomChange: (Float) -> Unit,
     isLandscape: Boolean,
 ) {
-    val presets = listOf(0.5f, 1.0f, 2.0f, 5.0f)
+    val presets = buildZoomPresets(minZoomRatio, maxZoomRatio)
 
     if (isLandscape) {
         Column(
@@ -204,7 +220,7 @@ private fun ZoomSelector(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             presets.forEach { preset ->
-                ZoomChip(preset = preset, isSelected = zoomRatio == preset, onClick = { onZoomChange(preset) })
+                ZoomChip(preset = preset, isSelected = kotlin.math.abs(zoomRatio - preset) < 0.05f, onClick = { onZoomChange(preset) })
             }
         }
     } else {
@@ -213,7 +229,7 @@ private fun ZoomSelector(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             presets.forEach { preset ->
-                ZoomChip(preset = preset, isSelected = zoomRatio == preset, onClick = { onZoomChange(preset) })
+                ZoomChip(preset = preset, isSelected = kotlin.math.abs(zoomRatio - preset) < 0.05f, onClick = { onZoomChange(preset) })
             }
         }
     }
@@ -225,7 +241,12 @@ private fun ZoomChip(
     isSelected: Boolean,
     onClick: () -> Unit,
 ) {
-    val label = if (preset == preset.toLong().toFloat()) "${preset.toLong()}x" else "${preset}x"
+    val label = if (preset >= 1f && preset == preset.toLong().toFloat()) {
+        "${preset.toLong()}x"
+    } else {
+        // Round to 1 decimal place for wide lens values like 0.6x
+        "${"%.1f".format(preset)}x"
+    }
     Box(
         modifier = Modifier
             .size(36.dp)
