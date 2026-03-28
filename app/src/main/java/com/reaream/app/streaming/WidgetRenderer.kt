@@ -4,6 +4,7 @@ import android.graphics.*
 import android.location.Location
 import com.reaream.app.data.model.ClockWidgetConfig
 import com.reaream.app.data.model.LocationWidgetConfig
+import com.reaream.app.data.model.MapWidgetConfig
 import com.reaream.app.data.model.SpeedUnit
 import com.reaream.app.data.model.SpeedWidgetConfig
 import com.reaream.app.data.model.WidgetSettings
@@ -20,6 +21,7 @@ class WidgetRenderer {
     val currentLocation = AtomicReference<Location?>(null)
     val currentAddress = AtomicReference<String?>(null)
     val currentSpeedKmh = AtomicReference(0f)
+    val currentMapBitmap = AtomicReference<Bitmap?>(null)
 
     private var overlayBitmap: Bitmap? = null
     private var overlayCanvas: Canvas? = null
@@ -47,12 +49,17 @@ class WidgetRenderer {
         height: Int,
         settings: WidgetSettings,
     ) {
-        if (!settings.clockWidget.enabled && !settings.locationWidget.enabled && !settings.speedWidget.enabled) return
+        if (!settings.clockWidget.enabled && !settings.locationWidget.enabled
+            && !settings.speedWidget.enabled && !settings.mapWidget.enabled) return
 
         val bitmap = ensureBitmap(width, height)
         val canvas = overlayCanvas ?: return
 
         bitmap.eraseColor(Color.TRANSPARENT)
+
+        if (settings.mapWidget.enabled) {
+            drawMap(canvas, width, height, settings.mapWidget)
+        }
 
         if (settings.clockWidget.enabled) {
             drawClock(canvas, width, height, settings.clockWidget)
@@ -95,6 +102,31 @@ class WidgetRenderer {
         val value = if (config.unit == SpeedUnit.MPH) kmh * 0.621371f else kmh
         val text = String.format(Locale.US, "%.0f %s", value, config.unit.label)
         drawTextWidget(canvas, w, h, text, config.x, config.y, config.fontSize)
+    }
+
+    private fun drawMap(canvas: Canvas, w: Int, h: Int, config: MapWidgetConfig) {
+        val mapBmp = currentMapBitmap.get() ?: return
+        val mapSize = (config.sizeDp * (h / 1280f) * 3f).toInt().coerceIn(50, minOf(w, h))
+
+        val x = (config.x * w).coerceIn(0f, (w - mapSize).coerceAtLeast(0).toFloat())
+        val y = (config.y * h).coerceIn(0f, (h - mapSize).coerceAtLeast(0).toFloat())
+
+        val dst = RectF(x, y, x + mapSize, y + mapSize)
+
+        // Draw rounded rect background
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = 4f
+        }
+
+        val path = android.graphics.Path()
+        path.addRoundRect(dst, 12f, 12f, android.graphics.Path.Direction.CW)
+        canvas.save()
+        canvas.clipPath(path)
+        canvas.drawBitmap(mapBmp, null, dst, null)
+        canvas.restore()
+        canvas.drawRoundRect(dst, 12f, 12f, borderPaint)
     }
 
     private fun drawTextWidget(canvas: Canvas, w: Int, h: Int, text: String, xPct: Float, yPct: Float, fontSize: Int) {
