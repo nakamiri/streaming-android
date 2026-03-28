@@ -117,6 +117,42 @@ adb shell pm revoke com.reaream.app android.permission.ACCESS_FINE_LOCATION
 adb shell pm revoke com.reaream.app android.permission.ACCESS_COARSE_LOCATION
 ```
 
+### YouTube OAuth 配信
+
+YouTube アカウント連携で配信する機能。Chrome Custom Tabs + PKCE OAuth フロー。
+
+- **認証方式**: Desktop タイプ OAuth クライアントID + client_secret + PKCE
+- **ブランドアカウント**: ブラウザ上の Google OAuth ページでアカウント切替可能
+- **ストリームキー方式**: ブランドアカウントで OAuth が使えない場合の代替
+
+#### セットアップ
+
+1. Google Cloud Console でプロジェクト作成、YouTube Data API v3 有効化
+2. OAuth consent screen を Testing モードで設定、テストユーザー追加
+3. Credentials → Create OAuth client ID → **Desktop application** タイプ
+4. `local.properties` に追加:
+   ```
+   youtube.client.id=YOUR_CLIENT_ID
+   youtube.client.secret=YOUR_CLIENT_SECRET
+   ```
+5. CI 用: GitHub Secrets に `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` を設定
+
+#### 配信フロー (OAuth)
+
+1. ウィザード → YouTube → アカウント連携 → Chrome Custom Tab で Google ログイン
+2. 認証後チャンネル情報取得 → 画質選択 → 配信枠設定（新規/既存）
+3. 配信開始 → API で broadcast + stream 作成 → RTMP URL/キー自動取得 → 配信
+4. 画面上部に共有用 YouTube URL 表示（タップでコピー）
+5. 配信停止 → broadcast を complete に遷移
+
+#### 関連ファイル
+
+- `YouTubeAuthManager.kt` — OAuth 認証、PKCE、トークン管理
+- `YouTubeApiClient.kt` — YouTube Live Streaming API クライアント
+- `OAuthRedirectActivity.kt` — ブラウザリダイレクト受信
+- `StreamWizardScreen.kt` — ウィザード UI（認証/配信枠設定ステップ）
+- `StreamConfig.kt` — `AuthType.YOUTUBE_OAUTH` / `YouTubePrivacy` enum
+
 ### ログ確認
 
 ```bash

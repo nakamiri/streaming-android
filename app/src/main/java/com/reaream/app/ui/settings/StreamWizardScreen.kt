@@ -1,5 +1,6 @@
 package com.reaream.app.ui.settings
 
+import android.net.Uri
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,8 +23,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.reaream.app.data.YouTubeApiClient
+import com.reaream.app.data.YouTubeAuthManager
 import com.reaream.app.data.model.*
 import com.reaream.app.ui.Screen
+import kotlinx.coroutines.launch
 
 private enum class Platform(
     val displayName: String,
@@ -76,6 +80,9 @@ private enum class QualityPreset(
 fun StreamWizardScreen(
     onNavigate: (Screen) -> Unit,
     onSave: (StreamConfig) -> Unit,
+    youtubeAuthManager: YouTubeAuthManager? = null,
+    youtubeApiClient: YouTubeApiClient? = null,
+    oauthCallback: kotlinx.coroutines.flow.SharedFlow<Uri>? = null,
 ) {
     var step by remember { mutableIntStateOf(0) }
     var platform by remember { mutableStateOf<Platform?>(null) }
@@ -83,7 +90,75 @@ fun StreamWizardScreen(
     var streamKey by remember { mutableStateOf("") }
     var quality by remember { mutableStateOf(QualityPreset.STANDARD) }
 
-    val stepTitles = listOf("Platform", "Connection", "Quality")
+    // YouTube OAuth state
+    var useOAuth by remember { mutableStateOf(false) }
+    var isSignedIn by remember { mutableStateOf(youtubeAuthManager?.isSignedIn() == true) }
+    var channelName by remember { mutableStateOf(youtubeAuthManager?.getChannelName() ?: "") }
+    var authError by remember { mutableStateOf<String?>(null) }
+    var isAuthenticating by remember { mutableStateOf(false) }
+
+    // YouTube channel info (fetched after sign-in)
+    var channelId by remember { mutableStateOf("") }
+    var isLoadingChannel by remember { mutableStateOf(false) }
+
+    // YouTube broadcast settings
+    var broadcastTitle by remember { mutableStateOf("") }
+    var privacy by remember { mutableStateOf(YouTubePrivacy.UNLISTED) }
+    var useExistingBroadcast by remember { mutableStateOf(false) }
+    var existingBroadcasts by remember { mutableStateOf<List<YouTubeApiClient.BroadcastInfo>>(emptyList()) }
+    var selectedBroadcastId by remember { mutableStateOf<String?>(null) }
+    var isLoadingBroadcasts by remember { mutableStateOf(false) }
+
+    val scope = rememberCoroutineScope()
+
+    val isYouTubeOAuth = platform == Platform.YOUTUBE && useOAuth
+
+    // OAuth steps: Platform(0) → Auth(1) → Quality(2) → Broadcast(3)
+    // Normal steps: Platform(0) → Connection(1) → Quality(2)
+    val stepTitles = if (isYouTubeOAuth) {
+        listOf("Platform", "Auth", "Quality", "Broadcast")
+    } else {
+        listOf("Platform", "Connection", "Quality")
+    }
+    val totalSteps = stepTitles.size
+
+    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+
+    // Listen for OAuth callback from browser redirect
+    LaunchedEffect(oauthCallback) {
+        oauthCallback?.collect { uri ->
+            isAuthenticating = true
+            val success = youtubeAuthManager?.handleRedirect(uri) == true
+            if (success) {
+                fetchChannelInfo(youtubeAuthManager, youtubeApiClient) { id, name ->
+                    channelId = id
+                    channelName = name
+                }
+                isSignedIn = true
+                authError = null
+            } else {
+                authError = "認証に失敗しました。再試行してください。"
+            }
+            isAuthenticating = false
+        }
+    }
+
+    fun canProceed(currentStep: Int): Boolean = if (isYouTubeOAuth) {
+        when (currentStep) {
+            0 -> platform != null
+            1 -> isSignedIn                              // Auth
+            2 -> true                                     // Quality
+            3 -> if (useExistingBroadcast) selectedBroadcastId != null else broadcastTitle.isNotBlank()
+            else -> true
+        }
+    } else {
+        when (currentStep) {
+            0 -> platform != null
+            1 -> platform == Platform.CUSTOM || url.isNotBlank()
+            2 -> true
+            else -> true
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -115,33 +190,62 @@ fun StreamWizardScreen(
                         Spacer(Modifier.width(1.dp))
                     }
 
-                    if (step < 2) {
+                    if (step < totalSteps - 1) {
                         Button(
-                            onClick = { step++ },
-                            enabled = when (step) {
-                                0 -> platform != null
-                                1 -> platform == Platform.CUSTOM || url.isNotBlank()
-                                else -> true
+                            onClick = {
+                                step++
+                                // Load existing broadcasts when entering broadcast step
+                                if (isYouTubeOAuth && step == 3 && existingBroadcasts.isEmpty()) {
+                                    isLoadingBroadcasts = true
+                                    scope.launch {
+                                        youtubeApiClient?.listUpcomingBroadcasts()
+                                            ?.onSuccess { existingBroadcasts = it }
+                                        isLoadingBroadcasts = false
+                                    }
+                                }
                             },
+                            enabled = canProceed(step),
                         ) {
                             Text("Next")
                         }
                     } else {
                         Button(onClick = {
                             val p = platform ?: return@Button
-                            onSave(
-                                StreamConfig(
-                                    name = if (p == Platform.CUSTOM) "Custom" else p.displayName,
-                                    url = url,
-                                    streamKey = streamKey,
-                                    protocol = p.protocol,
-                                    videoBitrate = quality.videoBitrate,
-                                    audioBitrate = p.defaultAudioBitrate,
-                                    resolution = quality.resolution,
-                                    fps = quality.fps,
-                                    videoCodec = p.videoCodec,
+                            if (isYouTubeOAuth) {
+                                val displayName = channelName.ifBlank { "OAuth" }
+                                onSave(
+                                    StreamConfig(
+                                        name = "YouTube ($displayName)",
+                                        url = "", // Will be set at stream start
+                                        streamKey = "",
+                                        protocol = p.protocol,
+                                        videoBitrate = quality.videoBitrate,
+                                        audioBitrate = p.defaultAudioBitrate,
+                                        resolution = quality.resolution,
+                                        fps = quality.fps,
+                                        videoCodec = p.videoCodec,
+                                        authType = AuthType.YOUTUBE_OAUTH,
+                                        youtubeChannelId = channelId,
+                                        youtubeChannelName = displayName,
+                                        youtubeBroadcastTitle = if (useExistingBroadcast) "" else broadcastTitle,
+                                        youtubePrivacy = privacy,
+                                    )
                                 )
-                            )
+                            } else {
+                                onSave(
+                                    StreamConfig(
+                                        name = if (p == Platform.CUSTOM) "Custom" else p.displayName,
+                                        url = url,
+                                        streamKey = streamKey,
+                                        protocol = p.protocol,
+                                        videoBitrate = quality.videoBitrate,
+                                        audioBitrate = p.defaultAudioBitrate,
+                                        resolution = quality.resolution,
+                                        fps = quality.fps,
+                                        videoCodec = p.videoCodec,
+                                    )
+                                )
+                            }
                             onNavigate(Screen.StreamSettings)
                         }) {
                             Text("Done")
@@ -185,19 +289,65 @@ fun StreamWizardScreen(
                         onSelect = { p ->
                             platform = p
                             url = p.defaultUrl
+                            // Reset OAuth state when switching platforms
+                            if (p != Platform.YOUTUBE) useOAuth = false
                         },
                     )
-                    1 -> ConnectionStep(
-                        platform = platform,
-                        url = url,
-                        streamKey = streamKey,
-                        onUrlChange = { url = it },
-                        onStreamKeyChange = { streamKey = it },
-                    )
+                    1 -> {
+                        if (isYouTubeOAuth) {
+                            YouTubeAuthStep(
+                                isSignedIn = isSignedIn,
+                                channelName = channelName,
+                                authError = authError,
+                                isAuthenticating = isAuthenticating,
+                                onSignIn = {
+                                    activity?.let { youtubeAuthManager?.launchAuthFlow(it) }
+                                },
+                                onSignOut = {
+                                    youtubeAuthManager?.signOut()
+                                    isSignedIn = false
+                                    channelName = ""
+                                    channelId = ""
+                                },
+                            )
+                        } else if (platform == Platform.YOUTUBE) {
+                            YouTubeConnectionStep(
+                                useOAuth = useOAuth,
+                                onUseOAuthChange = { useOAuth = it },
+                                hasOAuth = youtubeAuthManager != null,
+                                url = url,
+                                streamKey = streamKey,
+                                onUrlChange = { url = it },
+                                onStreamKeyChange = { streamKey = it },
+                            )
+                        } else {
+                            ConnectionStep(
+                                platform = platform,
+                                url = url,
+                                streamKey = streamKey,
+                                onUrlChange = { url = it },
+                                onStreamKeyChange = { streamKey = it },
+                            )
+                        }
+                    }
                     2 -> QualityStep(
                         selected = quality,
                         onSelect = { quality = it },
                     )
+                    3 -> if (isYouTubeOAuth) {
+                        BroadcastStep(
+                            useExisting = useExistingBroadcast,
+                            onUseExistingChange = { useExistingBroadcast = it },
+                            broadcastTitle = broadcastTitle,
+                            onBroadcastTitleChange = { broadcastTitle = it },
+                            privacy = privacy,
+                            onPrivacyChange = { privacy = it },
+                            existingBroadcasts = existingBroadcasts,
+                            selectedBroadcastId = selectedBroadcastId,
+                            onSelectBroadcast = { selectedBroadcastId = it },
+                            isLoading = isLoadingBroadcasts,
+                        )
+                    }
                 }
             }
         }
@@ -415,6 +565,400 @@ private fun ConnectionStep(
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions.Default,
         )
+    }
+}
+
+@Composable
+private fun YouTubeConnectionStep(
+    useOAuth: Boolean,
+    onUseOAuthChange: (Boolean) -> Unit,
+    hasOAuth: Boolean,
+    url: String,
+    streamKey: String,
+    onUrlChange: (String) -> Unit,
+    onStreamKeyChange: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(
+            "Connection Method",
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            "YouTube への接続方法を選択してください。",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        if (hasOAuth) {
+            AuthMethodCard(
+                title = "アカウント連携",
+                description = "Google アカウントでログインして自動設定（個人チャンネル向け）",
+                icon = Icons.Filled.AccountCircle,
+                isSelected = useOAuth,
+                onClick = { onUseOAuthChange(true) },
+            )
+        }
+
+        AuthMethodCard(
+            title = "ストリームキー",
+            description = "YouTube Studio からキーをコピーして入力（ブランドアカウント対応）",
+            icon = Icons.Filled.Key,
+            isSelected = !useOAuth,
+            onClick = { onUseOAuthChange(false) },
+        )
+
+        if (!useOAuth) {
+            OutlinedTextField(
+                value = url,
+                onValueChange = onUrlChange,
+                label = { Text("Server URL") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+
+            OutlinedTextField(
+                value = streamKey,
+                onValueChange = onStreamKeyChange,
+                label = { Text("Stream Key") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions.Default,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AuthMethodCard(
+    title: String,
+    description: String,
+    icon: ImageVector,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            },
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(32.dp),
+                tint = if (isSelected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (isSelected) {
+                Icon(
+                    Icons.Filled.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun YouTubeAuthStep(
+    isSignedIn: Boolean,
+    channelName: String,
+    authError: String?,
+    isAuthenticating: Boolean,
+    onSignIn: () -> Unit,
+    onSignOut: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(
+            "Google アカウント認証",
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            "YouTube にアクセスするため Google アカウントでログインしてください。",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        if (isSignedIn) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                ),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.CheckCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(32.dp),
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "ログイン済み",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        if (channelName.isNotBlank()) {
+                            Text(
+                                channelName,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                    }
+                    TextButton(onClick = onSignOut) {
+                        Text("アカウント切替")
+                    }
+                }
+            }
+        } else {
+            if (isAuthenticating) {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                Button(
+                    onClick = onSignIn,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(
+                        Icons.Filled.AccountCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Google アカウントでログイン")
+                }
+            }
+
+            if (authError != null) {
+                Text(
+                    authError,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BroadcastStep(
+    useExisting: Boolean,
+    onUseExistingChange: (Boolean) -> Unit,
+    broadcastTitle: String,
+    onBroadcastTitleChange: (String) -> Unit,
+    privacy: YouTubePrivacy,
+    onPrivacyChange: (YouTubePrivacy) -> Unit,
+    existingBroadcasts: List<YouTubeApiClient.BroadcastInfo>,
+    selectedBroadcastId: String?,
+    onSelectBroadcast: (String) -> Unit,
+    isLoading: Boolean,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(
+            "配信設定",
+            style = MaterialTheme.typography.titleMedium,
+        )
+
+        // Toggle: New vs Existing
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilterChip(
+                selected = !useExisting,
+                onClick = { onUseExistingChange(false) },
+                label = { Text("新規作成") },
+                leadingIcon = if (!useExisting) {
+                    { Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                } else null,
+            )
+            FilterChip(
+                selected = useExisting,
+                onClick = { onUseExistingChange(true) },
+                label = { Text("既存の配信枠") },
+                leadingIcon = if (useExisting) {
+                    { Icon(Icons.Filled.List, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                } else null,
+            )
+        }
+
+        if (useExisting) {
+            if (isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else if (existingBroadcasts.isEmpty()) {
+                Text(
+                    "配信予定の枠がありません。新規作成を選択してください。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                existingBroadcasts.forEach { broadcast ->
+                    val isSelected = selectedBroadcastId == broadcast.id
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onSelectBroadcast(broadcast.id) },
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            },
+                        ),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = { onSelectBroadcast(broadcast.id) },
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    broadcast.title,
+                                    style = MaterialTheme.typography.titleSmall,
+                                )
+                                Text(
+                                    broadcast.status,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            OutlinedTextField(
+                value = broadcastTitle,
+                onValueChange = onBroadcastTitleChange,
+                label = { Text("配信タイトル") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+
+            Text(
+                "公開設定",
+                style = MaterialTheme.typography.labelLarge,
+            )
+            YouTubePrivacy.entries.forEach { p ->
+                val isSelected = privacy == p
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onPrivacyChange(p) },
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isSelected) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        },
+                    ),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = isSelected,
+                            onClick = { onPrivacyChange(p) },
+                        )
+                        Text(
+                            p.displayName,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private suspend fun fetchChannelInfo(
+    authManager: YouTubeAuthManager?,
+    apiClient: YouTubeApiClient?,
+    onResult: (id: String, name: String) -> Unit,
+) {
+    apiClient?.listMyChannels()?.onSuccess { list ->
+        if (list.isNotEmpty()) {
+            authManager?.setChannelName(list[0].title)
+            onResult(list[0].id, list[0].title)
+        } else {
+            onResult("", "YouTube")
+        }
+    }?.onFailure {
+        onResult("", "YouTube")
     }
 }
 

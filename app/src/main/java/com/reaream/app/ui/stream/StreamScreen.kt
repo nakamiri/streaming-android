@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -57,6 +58,9 @@ fun StreamScreen(
     mapBitmap: android.graphics.Bitmap? = null,
     onUpdateWidgets: ((com.reaream.app.data.model.WidgetSettings) -> Unit)? = null,
     onRecheckPermission: (() -> Unit)? = null,
+    youtubeSetupError: String? = null,
+    onClearYoutubeError: (() -> Unit)? = null,
+    youtubeLiveUrl: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val configuration = LocalConfiguration.current
@@ -196,13 +200,50 @@ fun StreamScreen(
             }
         }
 
+        // YouTube live URL copy banner
+        if (youtubeLiveUrl != null && streamState.isStreaming) {
+            val clipboardManager = LocalContext.current.getSystemService(android.content.ClipboardManager::class.java)
+            var copied by remember { mutableStateOf(false) }
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 8.dp)
+                    .clickable {
+                        clipboardManager?.setPrimaryClip(
+                            android.content.ClipData.newPlainText("YouTube URL", youtubeLiveUrl)
+                        )
+                        copied = true
+                    }
+                    .background(Color(0xCC000000), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    if (copied) Icons.Filled.Check else Icons.Filled.ContentCopy,
+                    contentDescription = null,
+                    tint = if (copied) Color(0xFF4CAF50) else Color.White,
+                    modifier = Modifier.size(16.dp),
+                )
+                Text(
+                    text = if (copied) "Copied!" else youtubeLiveUrl,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                )
+            }
+        }
+
         // Error message
-        streamState.error?.let { error ->
+        val displayError = youtubeSetupError ?: streamState.error
+        displayError?.let { error ->
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .padding(24.dp)
-                    .clickable { onClearError() }
+                    .clickable {
+                        if (youtubeSetupError != null) onClearYoutubeError?.invoke()
+                        else onClearError()
+                    }
                     .background(
                         Color(0xCC000000),
                         RoundedCornerShape(12.dp),
