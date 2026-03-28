@@ -24,26 +24,28 @@ class MapTileProvider {
     private var lastFetchLat = 0.0
     private var lastFetchLng = 0.0
     private var lastFetchZoom = 0
+    private var lastShowMarker = true
     private var fetching = false
 
-    fun updateLocation(location: Location, zoom: Int) {
-        // Only re-fetch if moved significantly (~100m) or zoom changed
+    fun updateLocation(location: Location, zoom: Int, showMarker: Boolean = true) {
+        // Only re-fetch if moved significantly (~30m), zoom changed, or marker toggled
         val dist = if (lastFetchLat != 0.0) {
             val prev = Location("").apply { latitude = lastFetchLat; longitude = lastFetchLng }
             prev.distanceTo(location)
         } else Float.MAX_VALUE
 
-        if (dist < 100f && lastFetchZoom == zoom && _mapBitmap.value != null) return
+        if (dist < 30f && lastFetchZoom == zoom && lastShowMarker == showMarker && _mapBitmap.value != null) return
         if (fetching) return
 
         lastFetchLat = location.latitude
         lastFetchLng = location.longitude
         lastFetchZoom = zoom
+        lastShowMarker = showMarker
         fetching = true
 
         scope.launch {
             try {
-                val bitmap = fetchTileWithMarker(location.latitude, location.longitude, zoom)
+                val bitmap = fetchTileWithMarker(location.latitude, location.longitude, zoom, showMarker)
                 _mapBitmap.value = bitmap
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to fetch map tile", e)
@@ -53,7 +55,7 @@ class MapTileProvider {
         }
     }
 
-    private fun fetchTileWithMarker(lat: Double, lng: Double, zoom: Int): Bitmap {
+    private fun fetchTileWithMarker(lat: Double, lng: Double, zoom: Int, showMarker: Boolean = true): Bitmap {
         // Calculate tile coordinates
         val tileX = lngToTileX(lng, zoom)
         val tileY = latToTileY(lat, zoom)
@@ -88,8 +90,8 @@ class MapTileProvider {
         val markerX = ((fracX + 1) * 256).toFloat() // +1 for the offset of center tile
         val markerY = ((fracY + 1) * 256).toFloat()
 
-        // Draw marker
-        drawMarker(canvas, markerX, markerY)
+        // Draw marker if enabled
+        if (showMarker) drawMarker(canvas, markerX, markerY)
 
         // Crop to center portion (the visible map area)
         val cropSize = 256 * 2

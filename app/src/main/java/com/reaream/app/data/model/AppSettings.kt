@@ -98,6 +98,7 @@ data class MapWidgetConfig(
     val y: Float = 0.01f,
     val sizeDp: Int = 120,
     val zoom: Int = 15,
+    val showMarker: Boolean = true,
 )
 
 @Serializable

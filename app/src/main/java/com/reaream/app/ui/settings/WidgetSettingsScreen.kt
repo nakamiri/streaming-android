@@ -7,10 +7,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.reaream.app.data.model.*
 import com.reaream.app.ui.Screen
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,6 +128,42 @@ fun WidgetSettingsScreen(
                     onUpdate(widgets.copy(mapWidget = widgets.mapWidget.copy(enabled = it)))
                 },
             )
+            if (widgets.mapWidget.enabled) {
+                ListItem(
+                    headlineContent = { Text("縮尺 (ズーム)") },
+                    supportingContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("広域", style = MaterialTheme.typography.bodySmall)
+                            Slider(
+                                value = widgets.mapWidget.zoom.toFloat(),
+                                onValueChange = { newZoom ->
+                                    onUpdate(widgets.copy(
+                                        mapWidget = widgets.mapWidget.copy(zoom = newZoom.roundToInt())
+                                    ))
+                                },
+                                valueRange = 10f..18f,
+                                steps = 7,
+                                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                            )
+                            Text("詳細", style = MaterialTheme.typography.bodySmall)
+                        }
+                    },
+                    trailingContent = {
+                        Text(
+                            text = "${widgets.mapWidget.zoom}",
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                )
+                SwitchItem(
+                    title = "現在地マーカー",
+                    subtitle = "地図上に現在位置のピンを表示",
+                    checked = widgets.mapWidget.showMarker,
+                    onCheckedChange = {
+                        onUpdate(widgets.copy(mapWidget = widgets.mapWidget.copy(showMarker = it)))
+                    },
+                )
+            }
         }
     }
 }

@@ -12,7 +12,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -79,6 +82,39 @@ fun WidgetOverlay(
                         widgetSettings.copy(mapWidget = config.copy(sizeDp = newSize.coerceIn(60, 200)))
                     )
                 },
+                extraEditContent = if (isEditMode) {
+                    {
+                        // Map zoom controls
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 2.dp),
+                        ) {
+                            SizeButton(icon = Icons.Filled.ZoomOut) {
+                                if (config.zoom > 10) {
+                                    onUpdateWidgets?.invoke(
+                                        widgetSettings.copy(mapWidget = config.copy(zoom = config.zoom - 1))
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "z${config.zoom}",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                modifier = Modifier
+                                    .background(Color(0x80000000), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                            SizeButton(icon = Icons.Filled.ZoomIn) {
+                                if (config.zoom < 18) {
+                                    onUpdateWidgets?.invoke(
+                                        widgetSettings.copy(mapWidget = config.copy(zoom = config.zoom + 1))
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else null,
             ) {
                 MapWidgetView(bitmap = mapBitmap, sizeDp = config.sizeDp)
             }
@@ -213,6 +249,7 @@ private fun DraggableWidget(
     isEditMode: Boolean,
     onPositionChange: (Float, Float) -> Unit,
     onFontSizeChange: (Int) -> Unit,
+    extraEditContent: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     var widgetSize by remember { mutableStateOf(IntSize.Zero) }
@@ -269,6 +306,7 @@ private fun DraggableWidget(
                         if (fontSize < 40) onFontSizeChange(fontSize + 2)
                     }
                 }
+                extraEditContent?.invoke()
             }
         }
     }
