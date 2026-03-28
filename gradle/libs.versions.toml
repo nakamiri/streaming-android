@@ -17,6 +17,7 @@ kotlinxCoroutinesTest = "1.9.0"
 turbine = "1.2.0"
 mockk = "1.13.13"
 robolectric = "4.14.1"
+rootEncoder = "2.6.7"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -47,6 +48,8 @@ kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+rootencoder-rtmp = { group = "com.github.pedroSG94.RootEncoder", name = "rtmp", version.ref = "rootEncoder" }
+rootencoder-common = { group = "com.github.pedroSG94.RootEncoder", name = "common", version.ref = "rootEncoder" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

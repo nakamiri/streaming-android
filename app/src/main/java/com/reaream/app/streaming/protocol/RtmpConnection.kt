@@ -1,167 +1,200 @@
 package com.reaream.app.streaming.protocol
 
+import android.media.MediaCodec
 import android.util.Log
+import com.pedro.common.ConnectChecker
+import com.pedro.rtmp.rtmp.RtmpClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import java.io.DataOutputStream
 import java.io.IOException
-import java.io.InputStream
-import java.net.Socket
-import java.net.URI
-import javax.net.ssl.SSLSocketFactory
+import java.nio.ByteBuffer
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
- * RTMP connection implementation.
- * Handles the RTMP handshake and sends audio/video data over the RTMP protocol.
+ * RTMP connection using RootEncoder's RtmpClient.
+ * Handles the full RTMP protocol: handshake, connect, createStream, publish.
  */
-class RtmpConnection(private val url: String) : StreamConnection {
+class RtmpConnection(
+    private val url: String,
+    private val videoWidth: Int = 1920,
+    private val videoHeight: Int = 1080,
+    private val sampleRate: Int = 44100,
+) : StreamConnection {
 
-    private var socket: Socket? = null
-    private var outputStream: DataOutputStream? = null
-    private var inputStream: InputStream? = null
+    private var rtmpClient: RtmpClient? = null
+    private var videoInfoSent = false
 
     @Volatile
     override var isConnected: Boolean = false
         private set
 
-    override suspend fun connect() {
-        withContext(Dispatchers.IO) {
-            try {
-                val uri = URI(url)
-                val host = uri.host ?: throw IOException("Invalid host in URL: $url")
-                val isSecure = uri.scheme?.lowercase() == "rtmps"
-                val port = if (uri.port > 0) uri.port else if (isSecure) 443 else 1935
-
-                socket = if (isSecure) {
-                    SSLSocketFactory.getDefault().createSocket(host, port)
-                } else {
-                    Socket(host, port)
+    override suspend fun connect(): Unit = withContext(Dispatchers.IO) {
+        suspendCancellableCoroutine { continuation ->
+            val client = RtmpClient(object : ConnectChecker {
+                override fun onConnectionStarted(url: String) {
+                    Log.d(TAG, "Connection started: $url")
                 }
 
-                socket?.let { s ->
-                    s.tcpNoDelay = true
-                    s.soTimeout = 10_000
-                    outputStream = DataOutputStream(s.getOutputStream())
-                    inputStream = s.getInputStream()
+                override fun onConnectionSuccess() {
+                    Log.i(TAG, "RTMP connected successfully")
+                    isConnected = true
+                    if (continuation.isActive) {
+                        continuation.resume(Unit)
+                    }
                 }
 
-                performHandshake()
-                isConnected = true
-                Log.i(TAG, "RTMP connected to $host:$port")
-            } catch (e: Exception) {
-                isConnected = false
-                throw IOException("RTMP connection failed: ${e.message}", e)
+                override fun onConnectionFailed(reason: String) {
+                    Log.e(TAG, "RTMP connection failed: $reason")
+                    isConnected = false
+                    if (continuation.isActive) {
+                        continuation.resumeWithException(
+                            IOException("RTMP connection failed: $reason")
+                        )
+                    }
+                }
+
+                override fun onDisconnect() {
+                    Log.i(TAG, "RTMP disconnected")
+                    isConnected = false
+                }
+
+                override fun onAuthError() {
+                    Log.e(TAG, "RTMP auth error")
+                    isConnected = false
+                    if (continuation.isActive) {
+                        continuation.resumeWithException(
+                            IOException("RTMP authentication failed")
+                        )
+                    }
+                }
+
+                override fun onAuthSuccess() {
+                    Log.d(TAG, "RTMP auth success")
+                }
+
+                override fun onNewBitrate(bitrate: Long) {}
+            })
+
+            client.setVideoResolution(videoWidth, videoHeight)
+            client.setAudioInfo(sampleRate, isStereo = false)
+
+            rtmpClient = client
+            videoInfoSent = false
+            client.connect(url)
+
+            continuation.invokeOnCancellation {
+                client.disconnect()
             }
         }
     }
 
-    override suspend fun disconnect() {
-        withContext(Dispatchers.IO) {
-            isConnected = false
-            try {
-                outputStream?.close()
-                inputStream?.close()
-                socket?.close()
-            } catch (e: Exception) {
-                Log.w(TAG, "Error closing RTMP connection", e)
-            }
-            outputStream = null
-            inputStream = null
-            socket = null
-            Log.i(TAG, "RTMP disconnected")
+    override suspend fun disconnect(): Unit = withContext(Dispatchers.IO) {
+        isConnected = false
+        try {
+            rtmpClient?.disconnect()
+        } catch (e: Exception) {
+            Log.w(TAG, "Error disconnecting RTMP", e)
         }
+        rtmpClient = null
+        videoInfoSent = false
     }
 
-    override fun sendVideo(data: ByteArray, timestampUs: Long) {
+    override fun sendVideo(data: ByteArray, timestampUs: Long, flags: Int) {
         if (!isConnected) return
         try {
-            val timestampMs = (timestampUs / 1000).toInt()
-            val chunkHeader = RtmpChunkHeader.create(
-                chunkStreamId = 6,
-                timestamp = timestampMs,
-                messageLength = data.size,
-                messageTypeId = 0x09, // Video
-                messageStreamId = 1,
-            )
-            synchronized(this) {
-                outputStream?.write(chunkHeader)
-                outputStream?.write(data)
-                outputStream?.flush()
+            // Extract SPS/PPS from codec config and call setVideoInfo
+            if (flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
+                val spsPps = parseSpsPps(data)
+                if (spsPps != null) {
+                    Log.i(TAG, "Setting video info: SPS=${spsPps.first.remaining()} PPS=${spsPps.second.remaining()}")
+                    rtmpClient?.setVideoInfo(spsPps.first, spsPps.second, null)
+                    videoInfoSent = true
+                } else {
+                    Log.w(TAG, "Could not parse SPS/PPS from codec config")
+                }
+                return // Don't send codec config as a regular frame
             }
-        } catch (e: IOException) {
+
+            if (!videoInfoSent) return // Can't send video without SPS/PPS
+
+            val buffer = ByteBuffer.wrap(data)
+            val info = MediaCodec.BufferInfo().apply {
+                set(0, data.size, timestampUs, flags)
+            }
+            rtmpClient?.sendVideo(buffer, info)
+        } catch (e: Exception) {
             Log.e(TAG, "Error sending video", e)
             isConnected = false
         }
     }
 
-    override fun sendAudio(data: ByteArray, timestampUs: Long) {
+    override fun sendAudio(data: ByteArray, timestampUs: Long, flags: Int) {
         if (!isConnected) return
         try {
-            val timestampMs = (timestampUs / 1000).toInt()
-            val chunkHeader = RtmpChunkHeader.create(
-                chunkStreamId = 4,
-                timestamp = timestampMs,
-                messageLength = data.size,
-                messageTypeId = 0x08, // Audio
-                messageStreamId = 1,
-            )
-            synchronized(this) {
-                outputStream?.write(chunkHeader)
-                outputStream?.write(data)
-                outputStream?.flush()
+            val buffer = ByteBuffer.wrap(data)
+            val info = MediaCodec.BufferInfo().apply {
+                set(0, data.size, timestampUs, flags)
             }
-        } catch (e: IOException) {
+            rtmpClient?.sendAudio(buffer, info)
+        } catch (e: Exception) {
             Log.e(TAG, "Error sending audio", e)
             isConnected = false
         }
     }
 
-    private fun performHandshake() {
-        val out = outputStream ?: throw IOException("No output stream")
-        val inp = inputStream ?: throw IOException("No input stream")
+    /**
+     * Parse H.264 codec config data to extract SPS and PPS NAL units.
+     * Format: [00 00 00 01 SPS ... 00 00 00 01 PPS ...]
+     */
+    internal fun parseSpsPps(data: ByteArray): Pair<ByteBuffer, ByteBuffer>? {
+        val nalUnits = mutableListOf<ByteArray>()
+        var i = 0
+        while (i < data.size) {
+            // Find start code (00 00 00 01 or 00 00 01)
+            val startCodeLen = when {
+                i + 3 < data.size && data[i] == 0.toByte() && data[i + 1] == 0.toByte() &&
+                        data[i + 2] == 0.toByte() && data[i + 3] == 1.toByte() -> 4
+                i + 2 < data.size && data[i] == 0.toByte() && data[i + 1] == 0.toByte() &&
+                        data[i + 2] == 1.toByte() -> 3
+                else -> {
+                    i++
+                    continue
+                }
+            }
 
-        // C0: RTMP version
-        out.writeByte(0x03)
+            val nalStart = i + startCodeLen
+            // Find next start code or end
+            var nalEnd = data.size
+            for (j in nalStart until data.size - 2) {
+                if (data[j] == 0.toByte() && data[j + 1] == 0.toByte() &&
+                    (data[j + 2] == 1.toByte() || (j + 3 < data.size && data[j + 2] == 0.toByte() && data[j + 3] == 1.toByte()))
+                ) {
+                    nalEnd = j
+                    break
+                }
+            }
 
-        // C1: timestamp(4) + zero(4) + random(1528)
-        val c1 = ByteArray(1536)
-        val timestamp = (System.currentTimeMillis() / 1000).toInt()
-        c1[0] = (timestamp shr 24).toByte()
-        c1[1] = (timestamp shr 16).toByte()
-        c1[2] = (timestamp shr 8).toByte()
-        c1[3] = timestamp.toByte()
-        // bytes 4-7 are zero
-        kotlin.random.Random.nextBytes(c1, 8, 1536)
-        out.write(c1)
-        out.flush()
-
-        // S0
-        val s0 = inp.read()
-        if (s0 != 0x03) {
-            Log.w(TAG, "Unexpected RTMP version: $s0")
+            nalUnits.add(data.copyOfRange(nalStart, nalEnd))
+            i = nalEnd
         }
 
-        // S1
-        val s1 = ByteArray(1536)
-        readFully(inp, s1)
+        var sps: ByteArray? = null
+        var pps: ByteArray? = null
+        for (nal in nalUnits) {
+            if (nal.isEmpty()) continue
+            val nalType = nal[0].toInt() and 0x1F
+            when (nalType) {
+                7 -> sps = nal  // SPS
+                8 -> pps = nal  // PPS
+            }
+        }
 
-        // C2: echo S1
-        out.write(s1)
-        out.flush()
-
-        // S2
-        val s2 = ByteArray(1536)
-        readFully(inp, s2)
-
-        Log.d(TAG, "RTMP handshake completed")
-    }
-
-    private fun readFully(input: InputStream, buffer: ByteArray) {
-        var offset = 0
-        while (offset < buffer.size) {
-            val read = input.read(buffer, offset, buffer.size - offset)
-            if (read < 0) throw IOException("Unexpected end of stream")
-            offset += read
+        return if (sps != null && pps != null) {
+            Pair(ByteBuffer.wrap(sps), ByteBuffer.wrap(pps))
+        } else {
+            null
         }
     }
 

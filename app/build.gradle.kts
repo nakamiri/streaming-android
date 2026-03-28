@@ -77,6 +77,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
     implementation(libs.accompanist.permissions)
+    implementation(libs.rootencoder.rtmp)
+    implementation(libs.rootencoder.common)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation(libs.junit)

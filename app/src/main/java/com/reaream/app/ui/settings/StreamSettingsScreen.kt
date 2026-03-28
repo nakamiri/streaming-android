@@ -20,7 +20,6 @@ fun StreamSettingsScreen(
     settings: AppSettings,
     onNavigate: (Screen) -> Unit,
     onSelectStream: (Int) -> Unit,
-    onAddStream: () -> Unit,
     onDeleteStream: (Int) -> Unit,
 ) {
     Scaffold(
@@ -33,7 +32,7 @@ fun StreamSettingsScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onAddStream) {
+                    IconButton(onClick = { onNavigate(Screen.StreamWizard) }) {
                         Icon(Icons.Filled.Add, contentDescription = "Add Stream")
                     }
                 },
