@@ -1,6 +1,7 @@
 package com.reaream.app
 
 import android.Manifest
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -20,10 +21,22 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.action == OAuthRedirectActivity.ACTION_OAUTH_CALLBACK) {
+            intent.data?.let { uri -> viewModel.handleOAuthCallback(uri) }
+        }
+    }
+
     @OptIn(ExperimentalPermissionsApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Handle OAuth callback if launched from OAuthRedirectActivity
+        if (intent?.action == OAuthRedirectActivity.ACTION_OAUTH_CALLBACK) {
+            intent.data?.let { uri -> viewModel.handleOAuthCallback(uri) }
+        }
 
         setContent {
             ReareamTheme {
