@@ -54,6 +54,7 @@ fun ReareamApp(
                 mapBitmap = mapBitmap,
                 onUpdateWidgets = viewModel::updateWidgetSettings,
                 onRecheckPermission = { viewModel.locationProvider.recheckPermission() },
+                onSetDensity = { viewModel.streamingEngine.widgetRenderer.screenDensity = it },
                 youtubeSetupError = youtubeSetupError,
                 onClearYoutubeError = { viewModel.clearYoutubeSetupError() },
                 youtubeLiveUrl = youtubeLiveUrl,
