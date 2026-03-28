@@ -77,6 +77,12 @@ fun SettingsScreen(
                     subtitle = "Chat integration settings",
                     onClick = { onNavigate(Screen.ChatSettings) },
                 )
+                SettingsItem(
+                    icon = Icons.Filled.Widgets,
+                    title = "Widgets",
+                    subtitle = "Clock, location overlays on stream",
+                    onClick = { onNavigate(Screen.WidgetSettings) },
+                )
             }
         }
     }
