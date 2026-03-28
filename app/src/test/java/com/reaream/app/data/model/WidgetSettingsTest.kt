@@ -16,18 +16,17 @@ class WidgetSettingsTest {
     }
 
     @Test
-    fun `clock widget default position is top right area`() {
+    fun `clock widget default position is right-aligned top`() {
         val config = ClockWidgetConfig()
-        assertTrue(config.x > 0.5f)
-        assertTrue(config.y < 0.5f)
+        assertEquals(1.0f, config.x, 0.01f)
+        assertTrue(config.y < 0.1f)
         assertEquals(14, config.fontSize)
     }
 
     @Test
-    fun `location widget default position is bottom left area`() {
+    fun `location widget default position is right-aligned`() {
         val config = LocationWidgetConfig()
-        assertTrue(config.x < 0.5f)
-        assertTrue(config.y > 0.5f)
+        assertEquals(1.0f, config.x, 0.01f)
         assertEquals(12, config.fontSize)
     }
 
@@ -87,11 +86,11 @@ class WidgetSettingsTest {
     }
 
     @Test
-    fun `speed widget default position is top right area`() {
+    fun `speed widget default position is right-aligned`() {
         val config = SpeedWidgetConfig()
         assertFalse(config.enabled)
-        assertTrue(config.x > 0.5f)
-        assertTrue(config.y < 0.5f)
+        assertEquals(1.0f, config.x, 0.01f)
+        assertTrue(config.y < 0.1f)
         assertEquals(14, config.fontSize)
         assertEquals(SpeedUnit.KMH, config.unit)
     }
