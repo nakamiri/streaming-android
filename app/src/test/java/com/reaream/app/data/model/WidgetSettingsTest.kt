@@ -87,11 +87,11 @@ class WidgetSettingsTest {
     }
 
     @Test
-    fun `speed widget default position is bottom left area`() {
+    fun `speed widget default position is top right area`() {
         val config = SpeedWidgetConfig()
         assertFalse(config.enabled)
-        assertTrue(config.x < 0.5f)
-        assertTrue(config.y > 0.5f)
+        assertTrue(config.x > 0.5f)
+        assertTrue(config.y < 0.5f)
         assertEquals(14, config.fontSize)
         assertEquals(SpeedUnit.KMH, config.unit)
     }
