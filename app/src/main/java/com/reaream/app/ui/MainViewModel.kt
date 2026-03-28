@@ -123,13 +123,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentScreen = MutableStateFlow<Screen>(Screen.Stream)
     val currentScreen: StateFlow<Screen> = _currentScreen.asStateFlow()
 
+    // Stop confirmation dialog state (shown for YouTube OAuth streams)
+    private val _stopConfirmVisible = MutableStateFlow(false)
+    val stopConfirmVisible: StateFlow<Boolean> = _stopConfirmVisible.asStateFlow()
+
     fun toggleStreaming() {
         val state = streamState.value
         if (state.isStreaming || state.isConnecting) {
-            stopStreaming()
+            if (currentYoutubeBroadcastId != null) {
+                _stopConfirmVisible.value = true
+            } else {
+                stopStreaming(endBroadcast = false)
+            }
         } else {
             startStreaming()
         }
+    }
+
+    fun dismissStopConfirm() {
+        _stopConfirmVisible.value = false
+    }
+
+    fun confirmStop(endBroadcast: Boolean) {
+        _stopConfirmVisible.value = false
+        stopStreaming(endBroadcast = endBroadcast)
     }
 
     private fun startStreaming() {
@@ -212,6 +229,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun startStreamingWithConfig(config: StreamConfig) {
+        // Clear any stale YouTube broadcast ID when starting a non-OAuth stream,
+        // to avoid the stop confirmation dialog appearing for unrelated sessions.
+        if (config.authType != AuthType.YOUTUBE_OAUTH) {
+            currentYoutubeBroadcastId = null
+            _youtubeLiveUrl.value = null
+        }
+
         val context = getApplication<Application>()
 
         // Start foreground service
@@ -234,21 +258,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         streamingEngine.startStreaming(config)
     }
 
-    private fun stopStreaming() {
+    private fun stopStreaming(endBroadcast: Boolean) {
         val context = getApplication<Application>()
 
         streamingEngine.stopStreaming()
         audioCapture.stop()
         chatManager.disconnect()
 
-        // End YouTube broadcast if active
         val broadcastId = currentYoutubeBroadcastId
         if (broadcastId != null) {
-            viewModelScope.launch {
-                youtubeApiClient.transitionBroadcast(broadcastId, "complete")
-                currentYoutubeBroadcastId = null
-                _youtubeLiveUrl.value = null
+            if (endBroadcast) {
+                viewModelScope.launch {
+                    youtubeApiClient.transitionBroadcast(broadcastId, "complete")
+                    currentYoutubeBroadcastId = null
+                    _youtubeLiveUrl.value = null
+                }
             }
+            // If not ending, keep broadcastId so user can reconnect via the picker
         }
 
         val intent = Intent(context, StreamingService::class.java).apply {
