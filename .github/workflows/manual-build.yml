@@ -80,21 +80,21 @@ jobs:
           echo "apk_name=$BASENAME" >> "$GITHUB_OUTPUT"
 
       - name: Upload APK
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ steps.find_apk.outputs.apk_name }}
           path: ${{ steps.find_apk.outputs.apk_path }}
 
       - name: Upload lint results
         if: inputs.run_lint
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: lint-results
           path: app/build/reports/lint-results-debug.html
 
       - name: Upload test results
         if: inputs.run_tests && always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: test-results
           path: app/build/reports/tests/
