@@ -292,12 +292,15 @@ private fun DraggableWidget(
                 } else Modifier
             ),
     ) {
-        Column {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (isEditMode) {
+                extraEditContent?.invoke()
+            }
             content()
             if (isEditMode) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 2.dp),
+                    modifier = Modifier.padding(top = 2.dp),
                 ) {
                     SizeButton(icon = Icons.Filled.Remove) {
                         if (fontSize > minSize) onFontSizeChange(fontSize - sizeStep)
@@ -314,7 +317,6 @@ private fun DraggableWidget(
                         if (fontSize < maxSize) onFontSizeChange(fontSize + sizeStep)
                     }
                 }
-                extraEditContent?.invoke()
             }
         }
     }
