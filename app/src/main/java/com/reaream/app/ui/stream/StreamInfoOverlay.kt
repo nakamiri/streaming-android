@@ -70,7 +70,9 @@ fun StreamInfoOverlay(
         }
 
         if (streamState.videoWidth > 0) {
-            InfoText("${streamState.videoWidth}x${streamState.videoHeight}")
+            val resLabel = "${streamState.videoWidth}x${streamState.videoHeight}"
+            val label = if (streamState.adaptiveStepDown > 0) "$resLabel ▼" else resLabel
+            InfoText(label)
         }
 
         if (settings.display.showUptime) {
