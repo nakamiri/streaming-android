@@ -27,6 +27,7 @@ fun ReareamApp(
     val youtubeSetupError by viewModel.youtubeSetupError.collectAsStateWithLifecycle()
     val youtubeLiveUrl by viewModel.youtubeLiveUrl.collectAsStateWithLifecycle()
     val broadcastPicker by viewModel.broadcastPicker.collectAsStateWithLifecycle()
+    val stopConfirmVisible by viewModel.stopConfirmVisible.collectAsStateWithLifecycle()
 
     // Handle system back: go to previous screen instead of exiting app
     BackHandler(enabled = currentScreen !is Screen.Stream) {
@@ -67,6 +68,9 @@ fun ReareamApp(
                 broadcastPicker = broadcastPicker,
                 onSelectBroadcast = viewModel::startWithBroadcast,
                 onDismissBroadcastPicker = viewModel::dismissBroadcastPicker,
+                stopConfirmVisible = stopConfirmVisible,
+                onConfirmStop = viewModel::confirmStop,
+                onDismissStopConfirm = viewModel::dismissStopConfirm,
             )
 
             is Screen.Settings -> SettingsScreen(
