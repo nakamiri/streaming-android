@@ -1,5 +1,6 @@
 package com.reaream.app.streaming
 
+import com.reaream.app.data.model.StreamConfig
 import com.reaream.app.streaming.StreamingEngine.ConnectionQuality
 import com.reaream.app.streaming.StreamingEngine.StreamState
 import org.junit.Assert.*
@@ -73,6 +74,79 @@ class StreamingEngineTest {
     fun `release on idle engine does not crash`() {
         val engine = StreamingEngine()
         engine.release()
+    }
+
+    @Test
+    fun `startStreaming with blank URL sets error`() {
+        val engine = StreamingEngine()
+        val config = StreamConfig(url = "", streamKey = "key123")
+
+        engine.startStreaming(config)
+
+        val state = engine.state.value
+        assertFalse(state.isStreaming)
+        assertFalse(state.isConnecting)
+        assertNotNull(state.error)
+        assertTrue(state.error!!.contains("URL"))
+        engine.release()
+    }
+
+    @Test
+    fun `startStreaming with whitespace-only URL sets error`() {
+        val engine = StreamingEngine()
+        val config = StreamConfig(url = "   ")
+
+        engine.startStreaming(config)
+
+        assertNotNull(engine.state.value.error)
+        engine.release()
+    }
+
+    @Test
+    fun `clearError removes error from state`() {
+        val engine = StreamingEngine()
+        val config = StreamConfig(url = "")
+
+        engine.startStreaming(config) // Sets error
+        assertNotNull(engine.state.value.error)
+
+        engine.clearError()
+        assertNull(engine.state.value.error)
+        engine.release()
+    }
+
+    @Test
+    fun `double startStreaming with blank URL does not duplicate error`() {
+        val engine = StreamingEngine()
+        val config = StreamConfig(url = "")
+
+        engine.startStreaming(config)
+        val error1 = engine.state.value.error
+
+        engine.startStreaming(config)
+        val error2 = engine.state.value.error
+
+        assertEquals(error1, error2)
+        engine.release()
+    }
+
+    @Test
+    fun `onVideoFrame does nothing when not streaming`() {
+        val engine = StreamingEngine()
+        val buffer = java.nio.ByteBuffer.allocate(100)
+
         // Should not throw
+        engine.onVideoFrame(buffer, 640, 480, 0L)
+        engine.release()
+    }
+
+    @Test
+    fun `onAudioData does nothing when not streaming`() {
+        val engine = StreamingEngine()
+        val data = ByteArray(1024)
+
+        // Should not throw
+        engine.onAudioData(data, 0L)
+        engine.release()
     }
 }
