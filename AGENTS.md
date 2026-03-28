@@ -168,13 +168,27 @@ YouTube アカウント連携で配信する機能。Chrome Custom Tabs + PKCE O
 - 実際のエンコード解像度は配信中の左上情報表示に表示される
 - エミュレータのカメラは 16:9 で最大 1280x720。実機では設定解像度（720p/1080p/4K）に応じた解像度が選択される
 
+#### アカウント切り替え
+
+Streams 一覧から OAuth ストリームを編集 (Edit アイコン) すると、アカウントセクションが表示される。
+- ログイン済みチャンネル名が表示される
+- 「切り替え」ボタン → `signOut()` 後に `launchAuthFlow()` → Chrome Custom Tab で再認証 → `oauthCallback` で `channelName` 更新 → Save で `youtubeChannelName` 保存
+
+#### アダプティブ品質
+
+`StreamEditScreen` の「アダプティブ品質」スイッチで有効化。
+`StreamingEngine` が接続品質を監視し、POOR が 3 秒続くと解像度を 1 ステップ下げる（1080p→720p→480p）。
+GOOD が 10 秒続くと 1 ステップ上げる。`StreamState.adaptiveStepDown` でステップダウン数を公開（UI に `▼` 表示）。
+
 #### 関連ファイル
 
 - `YouTubeAuthManager.kt` — OAuth 認証、PKCE、トークン管理
 - `YouTubeApiClient.kt` — YouTube Live Streaming API クライアント
 - `OAuthRedirectActivity.kt` — ブラウザリダイレクト受信
 - `StreamWizardScreen.kt` — ウィザード UI（認証/配信枠設定ステップ）
+- `StreamEditScreen.kt` — ストリーム編集（YouTube アカウント切り替え、アダプティブ品質スイッチ）
 - `StreamConfig.kt` — `AuthType.YOUTUBE_OAUTH` / `YouTubePrivacy` enum
+- `StreamingEngine.kt` — アダプティブ品質制御、`buildResolutionSteps()`、`reinitVideoEncoder()`
 
 ### 未確認機能
 
