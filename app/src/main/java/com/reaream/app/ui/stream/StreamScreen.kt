@@ -53,6 +53,7 @@ fun StreamScreen(
     currentLocation: android.location.Location? = null,
     currentAddress: String? = null,
     speedKmh: Float = 0f,
+    locationPermissionDenied: Boolean = false,
     onUpdateWidgets: ((com.reaream.app.data.model.WidgetSettings) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -119,6 +120,7 @@ fun StreamScreen(
             currentLocation = currentLocation,
             currentAddress = currentAddress,
             speedKmh = speedKmh,
+            locationPermissionDenied = locationPermissionDenied,
             isEditMode = widgetEditMode,
             onUpdateWidgets = onUpdateWidgets,
         )
