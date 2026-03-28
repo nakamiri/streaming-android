@@ -27,6 +27,9 @@ class LocationProvider(private val context: Context) {
     private val _speedKmh = MutableStateFlow(0f)
     val speedKmh: StateFlow<Float> = _speedKmh.asStateFlow()
 
+    private val _permissionDenied = MutableStateFlow(false)
+    val permissionDenied: StateFlow<Boolean> = _permissionDenied.asStateFlow()
+
     private var locationManager: LocationManager? = null
     private var isRunning = false
     private var lastLocation: Location? = null
@@ -63,8 +66,10 @@ class LocationProvider(private val context: Context) {
         val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         Log.d(TAG, "Location permission granted: $hasPerm")
         if (!hasPerm) {
+            _permissionDenied.value = true
             return
         }
+        _permissionDenied.value = false
 
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
         locationManager = manager
@@ -92,6 +97,16 @@ class LocationProvider(private val context: Context) {
         }
         isRunning = started
         if (!started) Log.e(TAG, "No location providers available")
+    }
+
+    fun recheckPermission() {
+        if (_permissionDenied.value) {
+            val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            if (hasPerm) {
+                _permissionDenied.value = false
+                startUpdates()
+            }
+        }
     }
 
     fun stopUpdates() {
