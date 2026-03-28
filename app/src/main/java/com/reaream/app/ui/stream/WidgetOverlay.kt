@@ -1,8 +1,10 @@
 package com.reaream.app.ui.stream
 
+import android.Manifest
 import android.location.Location
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -13,6 +15,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -39,8 +43,10 @@ fun WidgetOverlay(
     currentLocation: Location?,
     currentAddress: String?,
     speedKmh: Float = 0f,
+    locationPermissionDenied: Boolean = false,
     isEditMode: Boolean = false,
     onUpdateWidgets: ((WidgetSettings) -> Unit)? = null,
+    onRecheckPermission: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
@@ -133,7 +139,43 @@ fun WidgetOverlay(
                 WidgetBadge(text = text, fontSize = config.fontSize)
             }
         }
+
+        // Permission warning with tap to request
+        val needsLocation = widgetSettings.locationWidget.enabled || widgetSettings.speedWidget.enabled
+        if (needsLocation && locationPermissionDenied && !isEditMode) {
+            LocationPermissionBanner(
+                onPermissionGranted = { onRecheckPermission?.invoke() },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
     }
+}
+
+@OptIn(ExperimentalPermissionsApi::class)
+@Composable
+private fun LocationPermissionBanner(
+    onPermissionGranted: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val permissionsState = rememberMultiplePermissionsState(
+        listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+    ) { results ->
+        if (results.values.any { it }) {
+            onPermissionGranted()
+        }
+    }
+
+    Text(
+        text = "⚠ タップして位置情報の権限を許可",
+        color = Color(0xFFFFC107),
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = modifier
+            .padding(bottom = 120.dp)
+            .clickable { permissionsState.launchMultiplePermissionRequest() }
+            .background(Color(0xCC000000), RoundedCornerShape(6.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    )
 }
 
 @Composable
@@ -147,12 +189,18 @@ private fun DraggableWidget(
     onFontSizeChange: (Int) -> Unit,
     content: @Composable () -> Unit,
 ) {
+    var widgetSize by remember { mutableStateOf(IntSize.Zero) }
     var offsetX by remember(x, containerSize) { mutableFloatStateOf(x * containerSize.width) }
     var offsetY by remember(y, containerSize) { mutableFloatStateOf(y * containerSize.height) }
 
+    // Clamp to prevent overflow on initial layout
+    val clampedX = offsetX.coerceIn(0f, (containerSize.width - widgetSize.width).coerceAtLeast(0).toFloat())
+    val clampedY = offsetY.coerceIn(0f, (containerSize.height - widgetSize.height).coerceAtLeast(0).toFloat())
+
     Box(
         modifier = Modifier
-            .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+            .offset { IntOffset(clampedX.roundToInt(), clampedY.roundToInt()) }
+            .onSizeChanged { widgetSize = it }
             .then(
                 if (isEditMode) {
                     Modifier
@@ -160,12 +208,10 @@ private fun DraggableWidget(
                         .pointerInput(Unit) {
                             detectDragGestures { change, dragAmount ->
                                 change.consume()
-                                offsetX = (offsetX + dragAmount.x).coerceIn(
-                                    0f, (containerSize.width - 50f)
-                                )
-                                offsetY = (offsetY + dragAmount.y).coerceIn(
-                                    0f, (containerSize.height - 50f)
-                                )
+                                val maxX = (containerSize.width - widgetSize.width).coerceAtLeast(0).toFloat()
+                                val maxY = (containerSize.height - widgetSize.height).coerceAtLeast(0).toFloat()
+                                offsetX = (offsetX + dragAmount.x).coerceIn(0f, maxX)
+                                offsetY = (offsetY + dragAmount.y).coerceIn(0f, maxY)
                                 onPositionChange(
                                     offsetX / containerSize.width,
                                     offsetY / containerSize.height,
