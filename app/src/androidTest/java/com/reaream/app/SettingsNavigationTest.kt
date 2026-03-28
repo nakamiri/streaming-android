@@ -36,6 +36,23 @@ class SettingsNavigationTest {
         composeTestRule.onNodeWithText("時計を表示").assertIsDisplayed()
         composeTestRule.onNodeWithText("位置情報を表示").assertIsDisplayed()
         composeTestRule.onNodeWithText("速度を表示").assertIsDisplayed()
+        composeTestRule.onNodeWithText("地図を表示").assertIsDisplayed()
+    }
+
+    @Test
+    fun mapWidgetSettingsShowsOptionsWhenEnabled() {
+        composeTestRule.onNodeWithContentDescription("Settings").performClick()
+        composeTestRule.onNodeWithText("Widgets").performClick()
+        // Scroll to map section and enable
+        composeTestRule.onNodeWithText("地図を表示").performScrollTo()
+        composeTestRule.onNodeWithText("地図を表示")
+            .onParent()
+            .onChildren()
+            .filterToOne(hasClickAction())
+            .performClick()
+        // Verify zoom slider and marker toggle appear
+        composeTestRule.onNodeWithText("縮尺 (ズーム)").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("現在地マーカー").performScrollTo().assertIsDisplayed()
     }
 
     @Test
