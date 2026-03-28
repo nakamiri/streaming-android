@@ -69,6 +69,10 @@ fun StreamInfoOverlay(
             InfoText("${streamState.fps} fps")
         }
 
+        if (streamState.videoWidth > 0) {
+            InfoText("${streamState.videoWidth}x${streamState.videoHeight}")
+        }
+
         if (settings.display.showUptime) {
             val hours = streamState.uptime / 3600
             val minutes = (streamState.uptime % 3600) / 60
