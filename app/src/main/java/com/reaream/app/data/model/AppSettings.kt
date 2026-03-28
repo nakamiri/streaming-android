@@ -84,8 +84,8 @@ data class LocationWidgetConfig(
 @Serializable
 data class SpeedWidgetConfig(
     val enabled: Boolean = false,
-    val x: Float = 0.02f,
-    val y: Float = 0.72f,
+    val x: Float = 0.75f,
+    val y: Float = 0.06f,
     val fontSize: Int = 14,
     val unit: SpeedUnit = SpeedUnit.KMH,
 )
