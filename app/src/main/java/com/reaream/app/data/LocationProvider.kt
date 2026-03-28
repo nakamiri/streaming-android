@@ -52,27 +52,31 @@ class LocationProvider(private val context: Context) {
     }
 
     private val locationListener = LocationListener { location ->
+        // Skip duplicate updates from multiple providers (GPS + FUSED fire close together)
+        val now = System.currentTimeMillis()
+        if (now - lastLocationTime < 1000L && lastLocation != null) {
+            val dist = lastLocation!!.distanceTo(location)
+            if (dist < 1f) return@LocationListener
+        }
+
         Log.d(TAG, "Location update: ${location.latitude}, ${location.longitude}")
 
-        // Calculate speed
-        if (location.hasSpeed() && location.speed > 0f) {
+        // Calculate speed — prefer GPS sensor speed, fall back to distance-based
+        val prev = lastLocation
+        val prevTime = lastLocationTime
+        if (location.hasSpeed() && location.speed > 0.5f) {
             _speedKmh.value = location.speed * 3.6f // m/s → km/h
-        } else {
-            val prev = lastLocation
-            val prevTime = lastLocationTime
-            val now = System.currentTimeMillis()
-            if (prev != null && now > prevTime) {
-                val distMeters = prev.distanceTo(location)
-                val timeSec = (now - prevTime) / 1000f
-                if (timeSec > 0f && distMeters > 1f) {
-                    _speedKmh.value = (distMeters / timeSec) * 3.6f
-                } else {
-                    _speedKmh.value = 0f
-                }
+        } else if (prev != null && now > prevTime) {
+            val distMeters = prev.distanceTo(location)
+            val timeSec = (now - prevTime) / 1000f
+            if (timeSec > 0.5f && distMeters > 1f) {
+                _speedKmh.value = (distMeters / timeSec) * 3.6f
+            } else if (timeSec > 0.5f) {
+                _speedKmh.value = 0f
             }
         }
         lastLocation = location
-        lastLocationTime = System.currentTimeMillis()
+        lastLocationTime = now
 
         // Reset speed reset timer
         scheduleSpeedReset()
