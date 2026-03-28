@@ -72,7 +72,7 @@ fun SettingsScreen(
                     onClick = { onNavigate(Screen.DisplaySettings) },
                 )
                 SettingsItem(
-                    icon = Icons.Filled.Chat,
+                    icon = Icons.Filled.Forum,
                     title = "Chat",
                     subtitle = "Chat integration settings",
                     onClick = { onNavigate(Screen.ChatSettings) },
