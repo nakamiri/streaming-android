@@ -91,6 +91,9 @@ fun ReareamApp(
                 settings = settings,
                 onBack = viewModel::navigateBack,
                 onSave = viewModel::updateStream,
+                youtubeAuthManager = viewModel.youtubeAuthManager,
+                oauthCallback = viewModel.oauthCallback,
+                onSignOutYouTube = viewModel::signOutYouTube,
             )
 
             is Screen.CameraSettings -> CameraSettingsScreen(
