@@ -61,10 +61,13 @@ class YouTubeApiClient(private val authManager: YouTubeAuthManager) {
         }
     }
 
-    suspend fun listUpcomingBroadcasts(): Result<List<BroadcastInfo>> = apiCall {
+    /**
+     * List broadcasts by status. Valid statuses: "active", "upcoming", "completed", "all".
+     */
+    suspend fun listBroadcasts(broadcastStatus: String = "upcoming"): Result<List<BroadcastInfo>> = apiCall {
         val token = getToken()
         val request = Request.Builder()
-            .url("$BASE_URL/liveBroadcasts?part=snippet,status&broadcastStatus=upcoming&maxResults=20")
+            .url("$BASE_URL/liveBroadcasts?part=snippet,status&broadcastStatus=$broadcastStatus&maxResults=20")
             .addHeader("Authorization", "Bearer $token")
             .build()
 
@@ -163,6 +166,42 @@ class YouTubeApiClient(private val authManager: YouTubeAuthManager) {
         execute(request)
     }
 
+    /**
+     * Get the bound stream's ingestion info for an existing broadcast.
+     */
+    suspend fun getBoundStreamIngestion(broadcastId: String): Result<StreamIngestion> = apiCall {
+        val token = getToken()
+
+        // Get broadcast to find bound stream ID
+        val bcRequest = Request.Builder()
+            .url("$BASE_URL/liveBroadcasts?part=contentDetails&id=$broadcastId")
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        val bcBody = execute(bcRequest)
+        val bcItems = bcBody.jsonObject["items"]?.jsonArray
+            ?: throw Exception("Broadcast not found: $broadcastId")
+        val boundStreamId = bcItems[0].jsonObject["contentDetails"]!!
+            .jsonObject["boundStreamId"]?.jsonPrimitive?.content
+            ?: throw Exception("No stream bound to broadcast")
+
+        // Get stream ingestion info
+        val stRequest = Request.Builder()
+            .url("$BASE_URL/liveStreams?part=cdn&id=$boundStreamId")
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        val stBody = execute(stRequest)
+        val stItems = stBody.jsonObject["items"]?.jsonArray
+            ?: throw Exception("Stream not found: $boundStreamId")
+        val cdn = stItems[0].jsonObject["cdn"]!!.jsonObject
+        val ingestion = cdn["ingestionInfo"]!!.jsonObject
+
+        StreamIngestion(
+            rtmpUrl = ingestion["ingestionAddress"]!!.jsonPrimitive.content,
+            streamKey = ingestion["streamName"]!!.jsonPrimitive.content,
+            streamId = boundStreamId,
+        )
+    }
+
     suspend fun setupAndGetIngestion(
         title: String,
         privacyStatus: String,
@@ -170,20 +209,23 @@ class YouTubeApiClient(private val authManager: YouTubeAuthManager) {
         fps: Int = 30,
         existingBroadcastId: String? = null,
     ): Result<Pair<String, StreamIngestion>> {
-        // Step 1: Create or use existing broadcast
-        val broadcastId = if (existingBroadcastId != null) {
-            existingBroadcastId
-        } else {
-            val result = createBroadcast(title, privacyStatus)
-            result.getOrElse { return Result.failure(it) }
+        // For existing broadcasts, get the already-bound stream's ingestion info
+        if (existingBroadcastId != null) {
+            val ingestion = getBoundStreamIngestion(existingBroadcastId).getOrElse {
+                return Result.failure(it)
+            }
+            return Result.success(existingBroadcastId to ingestion)
         }
 
-        // Step 2: Create stream
+        // New broadcast: create broadcast, stream, and bind
+        val broadcastId = createBroadcast(title, privacyStatus).getOrElse {
+            return Result.failure(it)
+        }
+
         val stream = createStream(title, resolution, fps).getOrElse {
             return Result.failure(it)
         }
 
-        // Step 3: Bind broadcast to stream
         bindBroadcast(broadcastId, stream.streamId).getOrElse {
             return Result.failure(it)
         }

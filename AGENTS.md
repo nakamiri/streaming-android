@@ -141,9 +141,18 @@ YouTube アカウント連携で配信する機能。Chrome Custom Tabs + PKCE O
 
 1. ウィザード → YouTube → アカウント連携 → Chrome Custom Tab で Google ログイン
 2. 認証後チャンネル情報取得 → 画質選択 → 配信枠設定（新規/既存）
-3. 配信開始 → API で broadcast + stream 作成 → RTMP URL/キー自動取得 → 配信
-4. 画面上部に共有用 YouTube URL 表示（タップでコピー）
-5. 配信停止 → broadcast を complete に遷移
+3. 配信開始ボタン → 配信枠選択ダイアログ表示（LIVE中/配信予定の既存枠 + 新規作成）
+4. 既存枠選択 → 紐づくストリームの ingestion 情報を取得 → 配信再開
+5. 新規作成 → API で broadcast + stream 作成・バインド → RTMP URL/キー自動取得 → 配信
+6. 左上の情報表示にリンクアイコン表示（タップで共有用 YouTube URL コピー）
+7. 配信停止 → broadcast を complete に遷移
+
+#### 配信復帰（途切れた場合）
+
+配信が途切れた場合（アプリがバックグラウンドに移動した等）:
+1. アプリに戻る → 配信ボタンを押す
+2. ダイアログに「LIVE」ステータスの配信枠が表示される
+3. その枠を選択 → 既存ストリームの RTMP URL/キーを再取得して配信再開
 
 #### 関連ファイル
 

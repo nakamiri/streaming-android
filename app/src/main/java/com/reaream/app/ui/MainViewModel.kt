@@ -40,6 +40,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _youtubeLiveUrl = MutableStateFlow<String?>(null)
     val youtubeLiveUrl: StateFlow<String?> = _youtubeLiveUrl.asStateFlow()
 
+    // Broadcast picker dialog state
+    data class BroadcastPickerState(
+        val isLoading: Boolean = false,
+        val isVisible: Boolean = false,
+        val broadcasts: List<YouTubeApiClient.BroadcastInfo> = emptyList(),
+        val config: StreamConfig? = null,
+    )
+    private val _broadcastPicker = MutableStateFlow(BroadcastPickerState())
+    val broadcastPicker: StateFlow<BroadcastPickerState> = _broadcastPicker.asStateFlow()
+
     private val _youtubeSetupError = MutableStateFlow<String?>(null)
     val youtubeSetupError: StateFlow<String?> = _youtubeSetupError.asStateFlow()
 
@@ -141,7 +151,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun startYouTubeOAuthStreaming(config: StreamConfig) {
         viewModelScope.launch {
             _youtubeSetupError.value = null
-            Log.d("MainViewModel", "Starting YouTube OAuth streaming...")
+            _broadcastPicker.value = BroadcastPickerState(isLoading = true, isVisible = true, config = config)
+
+            // Fetch existing broadcasts (upcoming + live)
+            val upcoming = youtubeApiClient.listBroadcasts("upcoming").getOrDefault(emptyList())
+            val live = youtubeApiClient.listBroadcasts("active").getOrDefault(emptyList())
+            val all = live + upcoming
+
+            _broadcastPicker.value = BroadcastPickerState(
+                isVisible = true,
+                broadcasts = all,
+                config = config,
+            )
+        }
+    }
+
+    fun dismissBroadcastPicker() {
+        _broadcastPicker.value = BroadcastPickerState()
+    }
+
+    fun startWithBroadcast(existingBroadcastId: String?) {
+        val config = _broadcastPicker.value.config ?: return
+        _broadcastPicker.value = BroadcastPickerState()
+
+        viewModelScope.launch {
+            _youtubeSetupError.value = null
+            Log.d("MainViewModel", "Starting YouTube OAuth streaming, existingBroadcast=$existingBroadcastId")
 
             val resolutionStr = when (config.resolution) {
                 Resolution.HD_720 -> "720p"
@@ -150,13 +185,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             val title = config.youtubeBroadcastTitle.ifBlank { "Live Stream" }
-            Log.d("MainViewModel", "Broadcast title=$title, privacy=${config.youtubePrivacy.apiValue}, resolution=$resolutionStr")
 
             val result = youtubeApiClient.setupAndGetIngestion(
                 title = title,
                 privacyStatus = config.youtubePrivacy.apiValue,
                 resolution = resolutionStr,
                 fps = config.fps,
+                existingBroadcastId = existingBroadcastId,
             )
 
             result.onSuccess { (broadcastId, ingestion) ->

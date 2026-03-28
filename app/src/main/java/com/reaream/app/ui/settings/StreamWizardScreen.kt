@@ -198,7 +198,7 @@ fun StreamWizardScreen(
                                 if (isYouTubeOAuth && step == 3 && existingBroadcasts.isEmpty()) {
                                     isLoadingBroadcasts = true
                                     scope.launch {
-                                        youtubeApiClient?.listUpcomingBroadcasts()
+                                        youtubeApiClient?.listBroadcasts("upcoming")
                                             ?.onSuccess { existingBroadcasts = it }
                                         isLoadingBroadcasts = false
                                     }
