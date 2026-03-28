@@ -119,6 +119,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _torchEnabled = MutableStateFlow(false)
     val torchEnabled: StateFlow<Boolean> = _torchEnabled.asStateFlow()
 
+    private val _screenStack = mutableListOf<Screen>(Screen.Stream)
     private val _currentScreen = MutableStateFlow<Screen>(Screen.Stream)
     val currentScreen: StateFlow<Screen> = _currentScreen.asStateFlow()
 
@@ -276,7 +277,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun navigate(screen: Screen) {
-        _currentScreen.value = screen
+        if (screen != _currentScreen.value) {
+            _screenStack.add(_currentScreen.value)
+            _currentScreen.value = screen
+        }
+    }
+
+    fun navigateBack(): Boolean {
+        if (_screenStack.isNotEmpty()) {
+            _currentScreen.value = _screenStack.removeAt(_screenStack.lastIndex)
+            return true
+        }
+        return false
     }
 
     fun updateStream(index: Int, config: StreamConfig) {

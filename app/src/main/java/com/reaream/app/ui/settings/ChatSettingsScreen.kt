@@ -18,7 +18,7 @@ import com.reaream.app.ui.Screen
 @Composable
 fun ChatSettingsScreen(
     chat: ChatSettings,
-    onNavigate: (Screen) -> Unit,
+    onBack: () -> Unit,
     onUpdate: (ChatSettings) -> Unit,
 ) {
     var twitchChannel by remember(chat) { mutableStateOf(chat.twitchChannelName) }
@@ -38,7 +38,7 @@ fun ChatSettingsScreen(
                                 fontSize = fontSize.toIntOrNull() ?: 14,
                             )
                         )
-                        onNavigate(Screen.Settings)
+                        onBack()
                     }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
