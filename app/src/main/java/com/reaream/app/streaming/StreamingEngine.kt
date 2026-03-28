@@ -147,7 +147,7 @@ class StreamingEngine {
         if (baseVideoTimestampUs < 0) baseVideoTimestampUs = presentationTimeUs
         val relativeUs = presentationTimeUs - baseVideoTimestampUs
         try {
-            // Scale camera frame to encoder resolution if needed, then apply widget overlay
+            // TODO: reuse ByteArray buffers to reduce GC pressure (currently 2 allocs/frame at 30fps)
             val scaled = YuvUtils.scaleI420(
                 ByteArray(buffer.remaining()).also { buffer.get(it) },
                 width, height, encoderWidth, encoderHeight
@@ -243,10 +243,9 @@ class StreamingEngine {
 
             // Query actual color format, stride, and slice height the encoder uses after start()
             val inputFormat = this.inputFormat
-            encoderColorFormat = inputFormat.getInteger(
-                MediaFormat.KEY_COLOR_FORMAT,
-                MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible
-            )
+            encoderColorFormat = if (inputFormat.containsKey(MediaFormat.KEY_COLOR_FORMAT))
+                inputFormat.getInteger(MediaFormat.KEY_COLOR_FORMAT)
+            else MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible
             encoderStride = if (inputFormat.containsKey(MediaFormat.KEY_STRIDE))
                 inputFormat.getInteger(MediaFormat.KEY_STRIDE) else width
             encoderSliceHeight = if (inputFormat.containsKey(MediaFormat.KEY_SLICE_HEIGHT))
@@ -277,7 +276,9 @@ class StreamingEngine {
         return when (encoderColorFormat) {
             // Semi-planar NV12: Y then interleaved UV, with stride/sliceHeight alignment
             MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar,
-            0x7F420888 /* COLOR_FormatYUV420Flexible often means NV12 on HW encoders */ -> {
+            // COLOR_FormatYUV420Flexible (0x7F420888) — most Samsung/Qualcomm HW encoders
+            // use NV12 layout. If a device uses a different layout, this may need revisiting.
+            0x7F420888 -> {
                 val out = ByteArray(bufferSize)
                 // Copy Y rows with stride padding
                 for (row in 0 until height) {

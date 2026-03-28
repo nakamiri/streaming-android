@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicReference
  */
 class WidgetRenderer {
 
-    var screenDensity: Float = 2.0f
+    @Volatile var screenDensity: Float = 2.0f
 
     val currentLocation = AtomicReference<Location?>(null)
     val currentAddress = AtomicReference<String?>(null)
