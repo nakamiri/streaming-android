@@ -134,6 +134,7 @@ class WidgetSettingsTest {
         assertEquals(0.01f, config.y, 0.01f)
         assertEquals(120, config.sizeDp)
         assertEquals(15, config.zoom)
+        assertTrue(config.showMarker)
     }
 
     @Test
@@ -144,6 +145,7 @@ class WidgetSettingsTest {
             y = 0.5f,
             sizeDp = 160,
             zoom = 12,
+            showMarker = false,
         )
         val settings = WidgetSettings(mapWidget = config)
         val serialized = json.encodeToString(WidgetSettings.serializer(), settings)
@@ -151,6 +153,7 @@ class WidgetSettingsTest {
         assertEquals(settings, deserialized)
         assertEquals(160, deserialized.mapWidget.sizeDp)
         assertEquals(12, deserialized.mapWidget.zoom)
+        assertFalse(deserialized.mapWidget.showMarker)
     }
 
     @Test

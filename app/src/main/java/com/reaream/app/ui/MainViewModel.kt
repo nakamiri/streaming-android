@@ -41,14 +41,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     locationProvider.stopUpdates()
                 }
+
+                // Re-fetch map when zoom or marker settings change
+                val loc = locationProvider.location.value
+                if (loc != null && s.widgets.mapWidget.enabled) {
+                    mapTileProvider.updateLocation(loc, s.widgets.mapWidget.zoom, s.widgets.mapWidget.showMarker)
+                }
             }
         }
         viewModelScope.launch {
             locationProvider.location.collect { loc ->
                 streamingEngine.widgetRenderer.currentLocation.set(loc)
                 if (loc != null) {
-                    val zoom = settings.value.widgets.mapWidget.zoom
-                    mapTileProvider.updateLocation(loc, zoom)
+                    val mapConfig = settings.value.widgets.mapWidget
+                    mapTileProvider.updateLocation(loc, mapConfig.zoom, mapConfig.showMarker)
                 }
             }
         }

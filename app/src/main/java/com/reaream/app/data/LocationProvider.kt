@@ -8,6 +8,7 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
+import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -34,6 +35,21 @@ class LocationProvider(private val context: Context) {
     private var isRunning = false
     private var lastLocation: Location? = null
     private var lastLocationTime: Long = 0L
+    private val handler = Handler(Looper.getMainLooper())
+    private val speedResetRunnable = Runnable {
+        // No location update for a while → assume stationary
+        if (_speedKmh.value > 0f) {
+            _speedKmh.value = 0f
+        }
+        scheduleSpeedReset()
+    }
+
+    private fun scheduleSpeedReset() {
+        handler.removeCallbacks(speedResetRunnable)
+        if (isRunning) {
+            handler.postDelayed(speedResetRunnable, SPEED_RESET_INTERVAL_MS)
+        }
+    }
 
     private val locationListener = LocationListener { location ->
         Log.d(TAG, "Location update: ${location.latitude}, ${location.longitude}")
@@ -48,13 +64,18 @@ class LocationProvider(private val context: Context) {
             if (prev != null && now > prevTime) {
                 val distMeters = prev.distanceTo(location)
                 val timeSec = (now - prevTime) / 1000f
-                if (timeSec > 0f) {
+                if (timeSec > 0f && distMeters > 1f) {
                     _speedKmh.value = (distMeters / timeSec) * 3.6f
+                } else {
+                    _speedKmh.value = 0f
                 }
             }
         }
         lastLocation = location
         lastLocationTime = System.currentTimeMillis()
+
+        // Reset speed reset timer
+        scheduleSpeedReset()
 
         _location.value = location
         reverseGeocode(location)
@@ -81,7 +102,7 @@ class LocationProvider(private val context: Context) {
             try {
                 if (!manager.isProviderEnabled(provider)) continue
                 manager.requestLocationUpdates(
-                    provider, 10_000L, 5f, locationListener, Looper.getMainLooper(),
+                    provider, 3_000L, 2f, locationListener, Looper.getMainLooper(),
                 )
                 Log.i(TAG, "Location updates started ($provider)")
                 started = true
@@ -96,6 +117,7 @@ class LocationProvider(private val context: Context) {
             }
         }
         isRunning = started
+        if (started) scheduleSpeedReset()
         if (!started) Log.e(TAG, "No location providers available")
     }
 
@@ -111,6 +133,7 @@ class LocationProvider(private val context: Context) {
 
     fun stopUpdates() {
         if (!isRunning) return
+        handler.removeCallbacks(speedResetRunnable)
         locationManager?.removeUpdates(locationListener)
         isRunning = false
     }
@@ -143,5 +166,6 @@ class LocationProvider(private val context: Context) {
 
     companion object {
         private const val TAG = "LocationProvider"
+        private const val SPEED_RESET_INTERVAL_MS = 5_000L
     }
 }
