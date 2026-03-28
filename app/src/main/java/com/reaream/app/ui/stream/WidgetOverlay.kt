@@ -5,6 +5,8 @@ import android.location.Location
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -43,6 +45,7 @@ fun WidgetOverlay(
     currentLocation: Location?,
     currentAddress: String?,
     speedKmh: Float = 0f,
+    mapBitmap: android.graphics.Bitmap? = null,
     locationPermissionDenied: Boolean = false,
     isEditMode: Boolean = false,
     onUpdateWidgets: ((WidgetSettings) -> Unit)? = null,
@@ -57,6 +60,29 @@ fun WidgetOverlay(
             .onSizeChanged { containerSize = it },
     ) {
         if (containerSize.width == 0 || containerSize.height == 0) return@Box
+
+        if (widgetSettings.mapWidget.enabled && mapBitmap != null) {
+            val config = widgetSettings.mapWidget
+            DraggableWidget(
+                x = config.x,
+                y = config.y,
+                fontSize = config.sizeDp,
+                containerSize = containerSize,
+                isEditMode = isEditMode,
+                onPositionChange = { newX, newY ->
+                    onUpdateWidgets?.invoke(
+                        widgetSettings.copy(mapWidget = config.copy(x = newX, y = newY))
+                    )
+                },
+                onFontSizeChange = { newSize ->
+                    onUpdateWidgets?.invoke(
+                        widgetSettings.copy(mapWidget = config.copy(sizeDp = newSize.coerceIn(60, 200)))
+                    )
+                },
+            ) {
+                MapWidgetView(bitmap = mapBitmap, sizeDp = config.sizeDp)
+            }
+        }
 
         if (widgetSettings.clockWidget.enabled) {
             val config = widgetSettings.clockWidget
@@ -141,7 +167,7 @@ fun WidgetOverlay(
         }
 
         // Permission warning with tap to request
-        val needsLocation = widgetSettings.locationWidget.enabled || widgetSettings.speedWidget.enabled
+        val needsLocation = widgetSettings.locationWidget.enabled || widgetSettings.speedWidget.enabled || widgetSettings.mapWidget.enabled
         if (needsLocation && locationPermissionDenied && !isEditMode) {
             LocationPermissionBanner(
                 onPermissionGranted = { onRecheckPermission?.invoke() },
@@ -294,5 +320,21 @@ private fun WidgetBadge(text: String, fontSize: Int) {
         modifier = Modifier
             .background(Color(0xA0000000), RoundedCornerShape(6.dp))
             .padding(horizontal = 10.dp, vertical = 4.dp),
+    )
+}
+
+@Composable
+private fun MapWidgetView(bitmap: android.graphics.Bitmap, sizeDp: Int) {
+    val imageBitmap = remember(bitmap) {
+        bitmap.asImageBitmap()
+    }
+    androidx.compose.foundation.Image(
+        bitmap = imageBitmap,
+        contentDescription = "Map",
+        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+        modifier = Modifier
+            .size(sizeDp.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .border(2.dp, Color.White, RoundedCornerShape(8.dp)),
     )
 }

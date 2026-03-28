@@ -108,6 +108,24 @@ fun WidgetSettingsScreen(
                     },
                 )
             }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+            // Map Widget Section
+            Text(
+                text = "地図",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            SwitchItem(
+                title = "地図を表示",
+                subtitle = "配信映像にミニマップを表示（位置情報の権限が必要）",
+                checked = widgets.mapWidget.enabled,
+                onCheckedChange = {
+                    onUpdate(widgets.copy(mapWidget = widgets.mapWidget.copy(enabled = it)))
+                },
+            )
         }
     }
 }
