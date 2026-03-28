@@ -39,6 +39,7 @@ fun WidgetOverlay(
     currentLocation: Location?,
     currentAddress: String?,
     speedKmh: Float = 0f,
+    locationPermissionDenied: Boolean = false,
     isEditMode: Boolean = false,
     onUpdateWidgets: ((WidgetSettings) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -132,6 +133,22 @@ fun WidgetOverlay(
             ) {
                 WidgetBadge(text = text, fontSize = config.fontSize)
             }
+        }
+
+        // Permission warning
+        val needsLocation = widgetSettings.locationWidget.enabled || widgetSettings.speedWidget.enabled
+        if (needsLocation && locationPermissionDenied && !isEditMode) {
+            Text(
+                text = "⚠ 位置情報の権限を許可してください",
+                color = Color(0xFFFFC107),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 120.dp)
+                    .background(Color(0xCC000000), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            )
         }
     }
 }
