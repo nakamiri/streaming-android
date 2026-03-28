@@ -78,4 +78,56 @@ class StreamConfigTest {
         assertEquals("H.264", VideoCodec.H264.displayName)
         assertEquals("H.265 (HEVC)", VideoCodec.H265.displayName)
     }
+
+    @Test
+    fun `default auth type is stream key`() {
+        val config = StreamConfig()
+        assertEquals(AuthType.STREAM_KEY, config.authType)
+        assertEquals("", config.youtubeChannelId)
+        assertEquals("", config.youtubeChannelName)
+        assertEquals("", config.youtubeBroadcastTitle)
+        assertEquals(YouTubePrivacy.UNLISTED, config.youtubePrivacy)
+    }
+
+    @Test
+    fun `youtube oauth config serialization round trip`() {
+        val config = StreamConfig(
+            name = "YouTube (TestChannel)",
+            authType = AuthType.YOUTUBE_OAUTH,
+            youtubeChannelId = "UC123456",
+            youtubeChannelName = "TestChannel",
+            youtubeBroadcastTitle = "My Stream",
+            youtubePrivacy = YouTubePrivacy.PUBLIC,
+        )
+
+        val encoded = json.encodeToString(config)
+        val decoded = json.decodeFromString<StreamConfig>(encoded)
+
+        assertEquals(config, decoded)
+        assertEquals(AuthType.YOUTUBE_OAUTH, decoded.authType)
+        assertEquals("UC123456", decoded.youtubeChannelId)
+        assertEquals(YouTubePrivacy.PUBLIC, decoded.youtubePrivacy)
+    }
+
+    @Test
+    fun `deserialization without auth fields uses defaults`() {
+        val old = """{"name":"Old Stream","url":"rtmp://test","streamKey":"key"}"""
+        val config = json.decodeFromString<StreamConfig>(old)
+        assertEquals(AuthType.STREAM_KEY, config.authType)
+        assertEquals("", config.youtubeChannelId)
+        assertEquals(YouTubePrivacy.UNLISTED, config.youtubePrivacy)
+    }
+
+    @Test
+    fun `youtube privacy enum values`() {
+        assertEquals("public", YouTubePrivacy.PUBLIC.apiValue)
+        assertEquals("unlisted", YouTubePrivacy.UNLISTED.apiValue)
+        assertEquals("private", YouTubePrivacy.PRIVATE.apiValue)
+        assertEquals(3, YouTubePrivacy.entries.size)
+    }
+
+    @Test
+    fun `auth type enum values`() {
+        assertEquals(2, AuthType.entries.size)
+    }
 }

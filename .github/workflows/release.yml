@@ -35,6 +35,11 @@ jobs:
         run: |
           sed -i "s/versionName = \".*\"/versionName = \"${{ steps.version.outputs.version }}\"/" app/build.gradle.kts
 
+      - name: Write YouTube OAuth credentials
+        run: |
+          echo "youtube.client.id=${{ secrets.YOUTUBE_CLIENT_ID }}" >> local.properties
+          echo "youtube.client.secret=${{ secrets.YOUTUBE_CLIENT_SECRET }}" >> local.properties
+
       - name: Run unit tests
         run: ./gradlew testReleaseUnitTest
 

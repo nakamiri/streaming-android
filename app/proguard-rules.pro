@@ -14,3 +14,6 @@
 -keepclasseswithmembers class com.reaream.app.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
+
+# Google Tink (used by EncryptedSharedPreferences)
+-dontwarn com.google.errorprone.annotations.**

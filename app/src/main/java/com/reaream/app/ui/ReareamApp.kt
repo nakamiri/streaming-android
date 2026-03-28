@@ -23,6 +23,9 @@ fun ReareamApp(
     val speedKmh by viewModel.locationProvider.speedKmh.collectAsStateWithLifecycle()
     val locationPermissionDenied by viewModel.locationProvider.permissionDenied.collectAsStateWithLifecycle()
     val mapBitmap by viewModel.mapTileProvider.mapBitmap.collectAsStateWithLifecycle()
+    val youtubeSetupError by viewModel.youtubeSetupError.collectAsStateWithLifecycle()
+    val youtubeLiveUrl by viewModel.youtubeLiveUrl.collectAsStateWithLifecycle()
+    val broadcastPicker by viewModel.broadcastPicker.collectAsStateWithLifecycle()
 
     AnimatedContent(
         targetState = currentScreen,
@@ -51,6 +54,12 @@ fun ReareamApp(
                 mapBitmap = mapBitmap,
                 onUpdateWidgets = viewModel::updateWidgetSettings,
                 onRecheckPermission = { viewModel.locationProvider.recheckPermission() },
+                youtubeSetupError = youtubeSetupError,
+                onClearYoutubeError = { viewModel.clearYoutubeSetupError() },
+                youtubeLiveUrl = youtubeLiveUrl,
+                broadcastPicker = broadcastPicker,
+                onSelectBroadcast = viewModel::startWithBroadcast,
+                onDismissBroadcastPicker = viewModel::dismissBroadcastPicker,
             )
 
             is Screen.Settings -> SettingsScreen(
@@ -106,6 +115,9 @@ fun ReareamApp(
                 onSave = { config: StreamConfig ->
                     viewModel.addStreamFromWizard(config)
                 },
+                youtubeAuthManager = viewModel.youtubeAuthManager,
+                youtubeApiClient = viewModel.youtubeApiClient,
+                oauthCallback = viewModel.oauthCallback,
             )
         }
     }

@@ -15,7 +15,25 @@ data class StreamConfig(
     val videoCodec: VideoCodec = VideoCodec.H264,
     val adaptiveBitrate: Boolean = false,
     val srtLatency: Int = 2000,
+    val authType: AuthType = AuthType.STREAM_KEY,
+    val youtubeChannelId: String = "",
+    val youtubeChannelName: String = "",
+    val youtubeBroadcastTitle: String = "",
+    val youtubePrivacy: YouTubePrivacy = YouTubePrivacy.UNLISTED,
 )
+
+@Serializable
+enum class AuthType {
+    STREAM_KEY,
+    YOUTUBE_OAUTH,
+}
+
+@Serializable
+enum class YouTubePrivacy(val apiValue: String, val displayName: String) {
+    PUBLIC("public", "公開"),
+    UNLISTED("unlisted", "限定公開"),
+    PRIVATE("private", "非公開"),
+}
 
 @Serializable
 enum class StreamProtocol(val displayName: String) {
