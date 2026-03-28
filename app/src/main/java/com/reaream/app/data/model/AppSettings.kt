@@ -11,6 +11,7 @@ data class AppSettings(
     val display: DisplaySettings = DisplaySettings(),
     val chat: ChatSettings = ChatSettings(),
     val recording: RecordingSettings = RecordingSettings(),
+    val widgets: WidgetSettings = WidgetSettings(),
 ) {
     val currentStream: StreamConfig
         get() = streams.getOrElse(selectedStreamIndex) { StreamConfig() }
@@ -55,3 +56,33 @@ data class RecordingSettings(
     val enabled: Boolean = false,
     val videoBitrate: Int = 10000,
 )
+
+@Serializable
+data class WidgetSettings(
+    val clockWidget: ClockWidgetConfig = ClockWidgetConfig(),
+    val locationWidget: LocationWidgetConfig = LocationWidgetConfig(),
+)
+
+@Serializable
+data class ClockWidgetConfig(
+    val enabled: Boolean = false,
+    val format: ClockFormat = ClockFormat.HH_MM_SS,
+    val x: Float = 0.85f,
+    val y: Float = 0.02f,
+    val fontSize: Int = 14,
+)
+
+@Serializable
+data class LocationWidgetConfig(
+    val enabled: Boolean = false,
+    val x: Float = 0.02f,
+    val y: Float = 0.82f,
+    val fontSize: Int = 12,
+)
+
+@Serializable
+enum class ClockFormat(val pattern: String, val displayName: String) {
+    HH_MM("HH:mm", "24時間 (HH:mm)"),
+    HH_MM_SS("HH:mm:ss", "24時間 (HH:mm:ss)"),
+    TWELVE_HOUR("hh:mm a", "12時間 (hh:mm a)"),
+}
