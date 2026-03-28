@@ -69,6 +69,8 @@ fun StreamScreen(
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     var zoomRatio by remember { mutableFloatStateOf(1.0f) }
+    var minZoomRatio by remember { mutableFloatStateOf(1.0f) }
+    var maxZoomRatio by remember { mutableFloatStateOf(10.0f) }
     var widgetEditMode by remember { mutableStateOf(false) }
 
     Box(
@@ -85,6 +87,12 @@ fun StreamScreen(
             videoWidth = videoWidth,
             videoHeight = videoHeight,
             isLandscape = isLandscape,
+            onCameraZoomRange = { min, max ->
+                minZoomRatio = min
+                maxZoomRatio = max
+                // If current zoom is below new min (e.g. switched to front camera), reset to 1x
+                if (zoomRatio < min) zoomRatio = 1.0f
+            },
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -96,6 +104,8 @@ fun StreamScreen(
                     chatMessages = chatMessages,
                     torchEnabled = torchEnabled,
                     zoomRatio = zoomRatio,
+                    minZoomRatio = minZoomRatio,
+                    maxZoomRatio = maxZoomRatio,
                     hasWidgets = settings.widgets.let { it.clockWidget.enabled || it.locationWidget.enabled || it.speedWidget.enabled || it.mapWidget.enabled },
                     youtubeLiveUrl = youtubeLiveUrl,
                     onToggleStreaming = onToggleStreaming,
@@ -113,6 +123,8 @@ fun StreamScreen(
                     chatMessages = chatMessages,
                     torchEnabled = torchEnabled,
                     zoomRatio = zoomRatio,
+                    minZoomRatio = minZoomRatio,
+                    maxZoomRatio = maxZoomRatio,
                     hasWidgets = settings.widgets.let { it.clockWidget.enabled || it.locationWidget.enabled || it.speedWidget.enabled || it.mapWidget.enabled },
                     youtubeLiveUrl = youtubeLiveUrl,
                     onToggleStreaming = onToggleStreaming,
@@ -324,6 +336,8 @@ private fun LandscapeOverlay(
     chatMessages: List<ChatMessage>,
     torchEnabled: Boolean,
     zoomRatio: Float,
+    minZoomRatio: Float,
+    maxZoomRatio: Float,
     hasWidgets: Boolean,
     youtubeLiveUrl: String?,
     onToggleStreaming: () -> Unit,
@@ -364,6 +378,8 @@ private fun LandscapeOverlay(
             torchEnabled = torchEnabled,
             isLandscape = true,
             zoomRatio = zoomRatio,
+            minZoomRatio = minZoomRatio,
+            maxZoomRatio = maxZoomRatio,
             hasWidgets = hasWidgets,
             onToggleStreaming = onToggleStreaming,
             onToggleMute = onToggleMute,
@@ -386,6 +402,8 @@ private fun PortraitOverlay(
     chatMessages: List<ChatMessage>,
     torchEnabled: Boolean,
     zoomRatio: Float,
+    minZoomRatio: Float,
+    maxZoomRatio: Float,
     hasWidgets: Boolean,
     youtubeLiveUrl: String?,
     onToggleStreaming: () -> Unit,
@@ -432,6 +450,8 @@ private fun PortraitOverlay(
             torchEnabled = torchEnabled,
             isLandscape = false,
             zoomRatio = zoomRatio,
+            minZoomRatio = minZoomRatio,
+            maxZoomRatio = maxZoomRatio,
             hasWidgets = hasWidgets,
             onToggleStreaming = onToggleStreaming,
             onToggleMute = onToggleMute,
@@ -456,6 +476,7 @@ fun CameraPreview(
     videoWidth: Int = 1280,
     videoHeight: Int = 720,
     isLandscape: Boolean = false,
+    onCameraZoomRange: ((minZoom: Float, maxZoom: Float) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -552,6 +573,9 @@ fun CameraPreview(
                     camera.cameraControl.enableTorch(torchEnabled)
                     camera.cameraControl.setZoomRatio(zoomRatio)
                     cameraInstance = camera
+                    camera.cameraInfo.zoomState.value?.let { zs ->
+                        onCameraZoomRange?.invoke(zs.minZoomRatio, zs.maxZoomRatio)
+                    }
                 } else {
                     val camera = cameraProvider.bindToLifecycle(
                         lifecycleOwner,
@@ -561,6 +585,9 @@ fun CameraPreview(
                     camera.cameraControl.enableTorch(torchEnabled)
                     camera.cameraControl.setZoomRatio(zoomRatio)
                     cameraInstance = camera
+                    camera.cameraInfo.zoomState.value?.let { zs ->
+                        onCameraZoomRange?.invoke(zs.minZoomRatio, zs.maxZoomRatio)
+                    }
                 }
             } catch (e: Exception) {
                 // Camera binding failed
