@@ -147,12 +147,18 @@ private fun DraggableWidget(
     onFontSizeChange: (Int) -> Unit,
     content: @Composable () -> Unit,
 ) {
+    var widgetSize by remember { mutableStateOf(IntSize.Zero) }
     var offsetX by remember(x, containerSize) { mutableFloatStateOf(x * containerSize.width) }
     var offsetY by remember(y, containerSize) { mutableFloatStateOf(y * containerSize.height) }
 
+    // Clamp to prevent overflow on initial layout
+    val clampedX = offsetX.coerceIn(0f, (containerSize.width - widgetSize.width).coerceAtLeast(0).toFloat())
+    val clampedY = offsetY.coerceIn(0f, (containerSize.height - widgetSize.height).coerceAtLeast(0).toFloat())
+
     Box(
         modifier = Modifier
-            .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+            .offset { IntOffset(clampedX.roundToInt(), clampedY.roundToInt()) }
+            .onSizeChanged { widgetSize = it }
             .then(
                 if (isEditMode) {
                     Modifier
@@ -160,12 +166,10 @@ private fun DraggableWidget(
                         .pointerInput(Unit) {
                             detectDragGestures { change, dragAmount ->
                                 change.consume()
-                                offsetX = (offsetX + dragAmount.x).coerceIn(
-                                    0f, (containerSize.width - 50f)
-                                )
-                                offsetY = (offsetY + dragAmount.y).coerceIn(
-                                    0f, (containerSize.height - 50f)
-                                )
+                                val maxX = (containerSize.width - widgetSize.width).coerceAtLeast(0).toFloat()
+                                val maxY = (containerSize.height - widgetSize.height).coerceAtLeast(0).toFloat()
+                                offsetX = (offsetX + dragAmount.x).coerceIn(0f, maxX)
+                                offsetY = (offsetY + dragAmount.y).coerceIn(0f, maxY)
                                 onPositionChange(
                                     offsetX / containerSize.width,
                                     offsetY / containerSize.height,
