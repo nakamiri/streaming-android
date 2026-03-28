@@ -4,6 +4,8 @@ import android.graphics.*
 import android.location.Location
 import com.reaream.app.data.model.ClockWidgetConfig
 import com.reaream.app.data.model.LocationWidgetConfig
+import com.reaream.app.data.model.SpeedUnit
+import com.reaream.app.data.model.SpeedWidgetConfig
 import com.reaream.app.data.model.WidgetSettings
 import java.text.SimpleDateFormat
 import java.util.*
@@ -45,7 +47,7 @@ class WidgetRenderer {
         height: Int,
         settings: WidgetSettings,
     ) {
-        if (!settings.clockWidget.enabled && !settings.locationWidget.enabled) return
+        if (!settings.clockWidget.enabled && !settings.locationWidget.enabled && !settings.speedWidget.enabled) return
 
         val bitmap = ensureBitmap(width, height)
         val canvas = overlayCanvas ?: return
@@ -60,6 +62,10 @@ class WidgetRenderer {
             drawLocation(canvas, width, height, settings.locationWidget)
         }
 
+        if (settings.speedWidget.enabled) {
+            drawSpeed(canvas, width, height, settings.speedWidget)
+        }
+
         YuvCompositor.blendOntoI420(bitmap, yuvData, width, height)
     }
 
@@ -72,9 +78,8 @@ class WidgetRenderer {
     private fun drawLocation(canvas: Canvas, w: Int, h: Int, config: LocationWidgetConfig) {
         val address = currentAddress.get()
         val location = currentLocation.get()
-        val speed = currentSpeedKmh.get()
 
-        val locationText = when {
+        val text = when {
             address != null -> address
             location != null -> String.format(
                 Locale.US, "%.4f, %.4f", location.latitude, location.longitude
@@ -82,9 +87,13 @@ class WidgetRenderer {
             else -> return
         }
 
-        val speedText = if (speed >= 1f) String.format(Locale.US, "%.0f km/h", speed) else null
-        val text = listOfNotNull(locationText, speedText).joinToString(" | ")
+        drawTextWidget(canvas, w, h, text, config.x, config.y, config.fontSize)
+    }
 
+    private fun drawSpeed(canvas: Canvas, w: Int, h: Int, config: SpeedWidgetConfig) {
+        val kmh = currentSpeedKmh.get()
+        val value = if (config.unit == SpeedUnit.MPH) kmh * 0.621371f else kmh
+        val text = String.format(Locale.US, "%.0f %s", value, config.unit.label)
         drawTextWidget(canvas, w, h, text, config.x, config.y, config.fontSize)
     }
 

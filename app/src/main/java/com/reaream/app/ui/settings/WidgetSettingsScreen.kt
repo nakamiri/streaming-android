@@ -80,6 +80,34 @@ fun WidgetSettingsScreen(
                     onUpdate(widgets.copy(locationWidget = widgets.locationWidget.copy(enabled = it)))
                 },
             )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+            // Speed Widget Section
+            Text(
+                text = "速度",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            SwitchItem(
+                title = "速度を表示",
+                subtitle = "配信映像に移動速度を表示（位置情報の権限が必要）",
+                checked = widgets.speedWidget.enabled,
+                onCheckedChange = {
+                    onUpdate(widgets.copy(speedWidget = widgets.speedWidget.copy(enabled = it)))
+                },
+            )
+            if (widgets.speedWidget.enabled) {
+                UnitDropdown(
+                    selected = widgets.speedWidget.unit,
+                    onSelect = { unit ->
+                        onUpdate(widgets.copy(
+                            speedWidget = widgets.speedWidget.copy(unit = unit)
+                        ))
+                    },
+                )
+            }
         }
     }
 }
@@ -113,6 +141,45 @@ private fun FormatDropdown(
                             text = { Text(format.displayName) },
                             onClick = {
                                 onSelect(format)
+                                expanded = false
+                            },
+                        )
+                    }
+                }
+            }
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun UnitDropdown(
+    selected: SpeedUnit,
+    onSelect: (SpeedUnit) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    ListItem(
+        headlineContent = { Text("単位") },
+        trailingContent = {
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = it },
+            ) {
+                Text(
+                    text = selected.displayName,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                )
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                ) {
+                    SpeedUnit.entries.forEach { unit ->
+                        DropdownMenuItem(
+                            text = { Text(unit.displayName) },
+                            onClick = {
+                                onSelect(unit)
                                 expanded = false
                             },
                         )

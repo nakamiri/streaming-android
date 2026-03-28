@@ -77,17 +77,15 @@ fun WidgetOverlay(
 
         if (widgetSettings.locationWidget.enabled) {
             val config = widgetSettings.locationWidget
-            val locationText = when {
+            val text = when {
                 currentAddress != null -> currentAddress
                 currentLocation != null -> String.format(
                     Locale.US, "%.4f, %.4f", currentLocation.latitude, currentLocation.longitude
                 )
                 else -> null
             }
-            val speedText = if (speedKmh >= 1f) String.format(Locale.US, "%.0f km/h", speedKmh) else null
-            val text = listOfNotNull(locationText, speedText).joinToString(" | ")
 
-            if (text.isNotEmpty()) {
+            if (text != null) {
                 DraggableWidget(
                     x = config.x,
                     y = config.y,
@@ -107,6 +105,32 @@ fun WidgetOverlay(
                 ) {
                     WidgetBadge(text = text, fontSize = config.fontSize)
                 }
+            }
+        }
+
+        if (widgetSettings.speedWidget.enabled && speedKmh >= 0f) {
+            val config = widgetSettings.speedWidget
+            val value = if (config.unit == com.reaream.app.data.model.SpeedUnit.MPH) speedKmh * 0.621371f else speedKmh
+            val text = String.format(Locale.US, "%.0f %s", value, config.unit.label)
+
+            DraggableWidget(
+                x = config.x,
+                y = config.y,
+                fontSize = config.fontSize,
+                containerSize = containerSize,
+                isEditMode = isEditMode,
+                onPositionChange = { newX, newY ->
+                    onUpdateWidgets?.invoke(
+                        widgetSettings.copy(speedWidget = config.copy(x = newX, y = newY))
+                    )
+                },
+                onFontSizeChange = { newSize ->
+                    onUpdateWidgets?.invoke(
+                        widgetSettings.copy(speedWidget = config.copy(fontSize = newSize))
+                    )
+                },
+            ) {
+                WidgetBadge(text = text, fontSize = config.fontSize)
             }
         }
     }
