@@ -65,6 +65,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _oauthCallback.tryEmit(uri)
     }
 
+    fun signOutYouTube() {
+        youtubeAuthManager.signOut()
+    }
+
     val settings: StateFlow<AppSettings> = settingsRepo.settings
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
 
