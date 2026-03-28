@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -836,7 +837,7 @@ private fun BroadcastStep(
                 onClick = { onUseExistingChange(true) },
                 label = { Text("既存の配信枠") },
                 leadingIcon = if (useExisting) {
-                    { Icon(Icons.Filled.List, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    { Icon(Icons.AutoMirrored.Filled.ViewList, contentDescription = null, modifier = Modifier.size(18.dp)) }
                 } else null,
             )
         }
