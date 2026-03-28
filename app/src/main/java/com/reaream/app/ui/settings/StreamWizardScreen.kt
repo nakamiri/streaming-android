@@ -79,7 +79,7 @@ private enum class QualityPreset(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StreamWizardScreen(
-    onNavigate: (Screen) -> Unit,
+    onBack: () -> Unit,
     onSave: (StreamConfig) -> Unit,
     youtubeAuthManager: YouTubeAuthManager? = null,
     youtubeApiClient: YouTubeApiClient? = null,
@@ -167,7 +167,7 @@ fun StreamWizardScreen(
                 title = { Text("New Stream") },
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (step > 0) step-- else onNavigate(Screen.StreamSettings)
+                        if (step > 0) step-- else onBack()
                     }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
@@ -247,7 +247,7 @@ fun StreamWizardScreen(
                                     )
                                 )
                             }
-                            onNavigate(Screen.StreamSettings)
+                            onBack()
                         }) {
                             Text("Done")
                         }

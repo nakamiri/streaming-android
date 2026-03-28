@@ -17,7 +17,7 @@ import com.reaream.app.ui.Screen
 @Composable
 fun CameraSettingsScreen(
     camera: CameraSettings,
-    onNavigate: (Screen) -> Unit,
+    onBack: () -> Unit,
     onUpdate: (CameraSettings) -> Unit,
 ) {
     Scaffold(
@@ -25,7 +25,7 @@ fun CameraSettingsScreen(
             TopAppBar(
                 title = { Text("Camera") },
                 navigationIcon = {
-                    IconButton(onClick = { onNavigate(Screen.Settings) }) {
+                    IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },

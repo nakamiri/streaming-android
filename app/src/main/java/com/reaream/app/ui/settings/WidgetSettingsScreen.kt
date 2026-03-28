@@ -18,7 +18,7 @@ import kotlin.math.roundToInt
 @Composable
 fun WidgetSettingsScreen(
     widgets: WidgetSettings,
-    onNavigate: (Screen) -> Unit,
+    onBack: () -> Unit,
     onUpdate: (WidgetSettings) -> Unit,
 ) {
     Scaffold(
@@ -26,7 +26,7 @@ fun WidgetSettingsScreen(
             TopAppBar(
                 title = { Text("Widgets") },
                 navigationIcon = {
-                    IconButton(onClick = { onNavigate(Screen.Settings) }) {
+                    IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
