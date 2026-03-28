@@ -1,8 +1,10 @@
 package com.reaream.app.streaming
 
 import android.location.Location
+import android.graphics.Bitmap
 import com.reaream.app.data.model.ClockWidgetConfig
 import com.reaream.app.data.model.LocationWidgetConfig
+import com.reaream.app.data.model.MapWidgetConfig
 import com.reaream.app.data.model.SpeedUnit
 import com.reaream.app.data.model.SpeedWidgetConfig
 import com.reaream.app.data.model.WidgetSettings
@@ -144,5 +146,67 @@ class WidgetRendererTest {
         )
         // Should recreate bitmap internally
         renderer.renderOntoFrame(frame, w, h, settings)
+    }
+
+    @Test
+    fun `renderOntoFrame with map enabled and no bitmap does not crash`() {
+        val w = 640; val h = 480
+        val frame = ByteArray(w * h * 3 / 2) { 100.toByte() }
+
+        val settings = WidgetSettings(
+            mapWidget = MapWidgetConfig(enabled = true)
+        )
+        // No map bitmap set - should not crash
+        renderer.renderOntoFrame(frame, w, h, settings)
+    }
+
+    @Test
+    fun `renderOntoFrame with map enabled and bitmap set does not crash`() {
+        val w = 640; val h = 480
+        val frame = ByteArray(w * h * 3 / 2) { 100.toByte() }
+
+        val mapBmp = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
+        renderer.currentMapBitmap.set(mapBmp)
+
+        val settings = WidgetSettings(
+            mapWidget = MapWidgetConfig(enabled = true, x = 0.01f, y = 0.01f, sizeDp = 120)
+        )
+        renderer.renderOntoFrame(frame, w, h, settings)
+        mapBmp.recycle()
+    }
+
+    @Test
+    fun `currentMapBitmap is stored as AtomicReference`() {
+        assertNull(renderer.currentMapBitmap.get())
+        val bmp = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
+        renderer.currentMapBitmap.set(bmp)
+        assertNotNull(renderer.currentMapBitmap.get())
+        bmp.recycle()
+    }
+
+    @Test
+    fun `renderOntoFrame with all widgets enabled does not crash`() {
+        val w = 640; val h = 480
+        val frame = ByteArray(w * h * 3 / 2) { 100.toByte() }
+
+        val location = Location("test").apply {
+            latitude = 35.6895
+            longitude = 139.6917
+        }
+        renderer.currentLocation.set(location)
+        renderer.currentAddress.set("Tokyo")
+        renderer.currentSpeedKmh.set(30.0f)
+
+        val mapBmp = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
+        renderer.currentMapBitmap.set(mapBmp)
+
+        val settings = WidgetSettings(
+            clockWidget = ClockWidgetConfig(enabled = true),
+            locationWidget = LocationWidgetConfig(enabled = true),
+            speedWidget = SpeedWidgetConfig(enabled = true),
+            mapWidget = MapWidgetConfig(enabled = true),
+        )
+        renderer.renderOntoFrame(frame, w, h, settings)
+        mapBmp.recycle()
     }
 }

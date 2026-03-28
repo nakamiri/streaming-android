@@ -5,12 +5,17 @@ import android.location.Location
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -43,6 +48,7 @@ fun WidgetOverlay(
     currentLocation: Location?,
     currentAddress: String?,
     speedKmh: Float = 0f,
+    mapBitmap: android.graphics.Bitmap? = null,
     locationPermissionDenied: Boolean = false,
     isEditMode: Boolean = false,
     onUpdateWidgets: ((WidgetSettings) -> Unit)? = null,
@@ -50,6 +56,8 @@ fun WidgetOverlay(
     modifier: Modifier = Modifier,
 ) {
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
+    // Use updatedState so lambdas always see latest widgetSettings
+    val currentWidgets by rememberUpdatedState(widgetSettings)
 
     Box(
         modifier = modifier
@@ -58,31 +66,81 @@ fun WidgetOverlay(
     ) {
         if (containerSize.width == 0 || containerSize.height == 0) return@Box
 
-        if (widgetSettings.clockWidget.enabled) {
-            val config = widgetSettings.clockWidget
+        if (widgetSettings.mapWidget.enabled && mapBitmap != null) {
             DraggableWidget(
-                x = config.x,
-                y = config.y,
-                fontSize = config.fontSize,
+                x = widgetSettings.mapWidget.x,
+                y = widgetSettings.mapWidget.y,
+                fontSize = widgetSettings.mapWidget.sizeDp,
+                containerSize = containerSize,
+                isEditMode = isEditMode,
+                minSize = 60,
+                maxSize = 400,
+                sizeStep = 10,
+                onPositionChange = { newX, newY ->
+                    val w = currentWidgets
+                    onUpdateWidgets?.invoke(w.copy(mapWidget = w.mapWidget.copy(x = newX, y = newY)))
+                },
+                onFontSizeChange = { newSize ->
+                    val w = currentWidgets
+                    onUpdateWidgets?.invoke(w.copy(mapWidget = w.mapWidget.copy(sizeDp = newSize.coerceIn(60, 400))))
+                },
+                extraEditContent = if (isEditMode) {
+                    {
+                        val mapConfig = currentWidgets.mapWidget
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 2.dp),
+                        ) {
+                            SizeButton(icon = Icons.Filled.ZoomOut) {
+                                if (mapConfig.zoom > 10) {
+                                    val w = currentWidgets
+                                    onUpdateWidgets?.invoke(w.copy(mapWidget = w.mapWidget.copy(zoom = w.mapWidget.zoom - 1)))
+                                }
+                            }
+                            Text(
+                                text = "z${mapConfig.zoom}",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                modifier = Modifier
+                                    .background(Color(0x80000000), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                            SizeButton(icon = Icons.Filled.ZoomIn) {
+                                if (mapConfig.zoom < 18) {
+                                    val w = currentWidgets
+                                    onUpdateWidgets?.invoke(w.copy(mapWidget = w.mapWidget.copy(zoom = w.mapWidget.zoom + 1)))
+                                }
+                            }
+                        }
+                    }
+                } else null,
+            ) {
+                MapWidgetView(bitmap = mapBitmap, sizeDp = widgetSettings.mapWidget.sizeDp)
+            }
+        }
+
+        if (widgetSettings.clockWidget.enabled) {
+            DraggableWidget(
+                x = widgetSettings.clockWidget.x,
+                y = widgetSettings.clockWidget.y,
+                fontSize = widgetSettings.clockWidget.fontSize,
                 containerSize = containerSize,
                 isEditMode = isEditMode,
                 onPositionChange = { newX, newY ->
-                    onUpdateWidgets?.invoke(
-                        widgetSettings.copy(clockWidget = config.copy(x = newX, y = newY))
-                    )
+                    val w = currentWidgets
+                    onUpdateWidgets?.invoke(w.copy(clockWidget = w.clockWidget.copy(x = newX, y = newY)))
                 },
                 onFontSizeChange = { newSize ->
-                    onUpdateWidgets?.invoke(
-                        widgetSettings.copy(clockWidget = config.copy(fontSize = newSize))
-                    )
+                    val w = currentWidgets
+                    onUpdateWidgets?.invoke(w.copy(clockWidget = w.clockWidget.copy(fontSize = newSize)))
                 },
             ) {
-                ClockContent(format = config.format.pattern, fontSize = config.fontSize)
+                ClockContent(format = widgetSettings.clockWidget.format.pattern, fontSize = widgetSettings.clockWidget.fontSize)
             }
         }
 
         if (widgetSettings.locationWidget.enabled) {
-            val config = widgetSettings.locationWidget
             val text = when {
                 currentAddress != null -> currentAddress
                 currentLocation != null -> String.format(
@@ -93,55 +151,51 @@ fun WidgetOverlay(
 
             if (text != null) {
                 DraggableWidget(
-                    x = config.x,
-                    y = config.y,
-                    fontSize = config.fontSize,
+                    x = widgetSettings.locationWidget.x,
+                    y = widgetSettings.locationWidget.y,
+                    fontSize = widgetSettings.locationWidget.fontSize,
                     containerSize = containerSize,
                     isEditMode = isEditMode,
                     onPositionChange = { newX, newY ->
-                        onUpdateWidgets?.invoke(
-                            widgetSettings.copy(locationWidget = config.copy(x = newX, y = newY))
-                        )
+                        val w = currentWidgets
+                        onUpdateWidgets?.invoke(w.copy(locationWidget = w.locationWidget.copy(x = newX, y = newY)))
                     },
                     onFontSizeChange = { newSize ->
-                        onUpdateWidgets?.invoke(
-                            widgetSettings.copy(locationWidget = config.copy(fontSize = newSize))
-                        )
+                        val w = currentWidgets
+                        onUpdateWidgets?.invoke(w.copy(locationWidget = w.locationWidget.copy(fontSize = newSize)))
                     },
                 ) {
-                    WidgetBadge(text = text, fontSize = config.fontSize)
+                    WidgetBadge(text = text, fontSize = widgetSettings.locationWidget.fontSize)
                 }
             }
         }
 
         if (widgetSettings.speedWidget.enabled && speedKmh >= 0f) {
-            val config = widgetSettings.speedWidget
-            val value = if (config.unit == com.reaream.app.data.model.SpeedUnit.MPH) speedKmh * 0.621371f else speedKmh
-            val text = String.format(Locale.US, "%.0f %s", value, config.unit.label)
+            val speedConfig = widgetSettings.speedWidget
+            val value = if (speedConfig.unit == com.reaream.app.data.model.SpeedUnit.MPH) speedKmh * 0.621371f else speedKmh
+            val text = String.format(Locale.US, "%.0f %s", value, speedConfig.unit.label)
 
             DraggableWidget(
-                x = config.x,
-                y = config.y,
-                fontSize = config.fontSize,
+                x = speedConfig.x,
+                y = speedConfig.y,
+                fontSize = speedConfig.fontSize,
                 containerSize = containerSize,
                 isEditMode = isEditMode,
                 onPositionChange = { newX, newY ->
-                    onUpdateWidgets?.invoke(
-                        widgetSettings.copy(speedWidget = config.copy(x = newX, y = newY))
-                    )
+                    val w = currentWidgets
+                    onUpdateWidgets?.invoke(w.copy(speedWidget = w.speedWidget.copy(x = newX, y = newY)))
                 },
                 onFontSizeChange = { newSize ->
-                    onUpdateWidgets?.invoke(
-                        widgetSettings.copy(speedWidget = config.copy(fontSize = newSize))
-                    )
+                    val w = currentWidgets
+                    onUpdateWidgets?.invoke(w.copy(speedWidget = w.speedWidget.copy(fontSize = newSize)))
                 },
             ) {
-                WidgetBadge(text = text, fontSize = config.fontSize)
+                WidgetBadge(text = text, fontSize = speedConfig.fontSize)
             }
         }
 
         // Permission warning with tap to request
-        val needsLocation = widgetSettings.locationWidget.enabled || widgetSettings.speedWidget.enabled
+        val needsLocation = widgetSettings.locationWidget.enabled || widgetSettings.speedWidget.enabled || widgetSettings.mapWidget.enabled
         if (needsLocation && locationPermissionDenied && !isEditMode) {
             LocationPermissionBanner(
                 onPermissionGranted = { onRecheckPermission?.invoke() },
@@ -187,11 +241,24 @@ private fun DraggableWidget(
     isEditMode: Boolean,
     onPositionChange: (Float, Float) -> Unit,
     onFontSizeChange: (Int) -> Unit,
+    minSize: Int = 8,
+    maxSize: Int = 60,
+    sizeStep: Int = 2,
+    extraEditContent: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     var widgetSize by remember { mutableStateOf(IntSize.Zero) }
-    var offsetX by remember(x, containerSize) { mutableFloatStateOf(x * containerSize.width) }
-    var offsetY by remember(y, containerSize) { mutableFloatStateOf(y * containerSize.height) }
+    var offsetX by remember { mutableFloatStateOf(x * containerSize.width) }
+    var offsetY by remember { mutableFloatStateOf(y * containerSize.height) }
+    var isDragging by remember { mutableStateOf(false) }
+
+    // Sync from external state changes (e.g. reset), but not during drag
+    LaunchedEffect(x, y, containerSize) {
+        if (!isDragging) {
+            offsetX = x * containerSize.width
+            offsetY = y * containerSize.height
+        }
+    }
 
     // Clamp to prevent overflow on initial layout
     val clampedX = offsetX.coerceIn(0f, (containerSize.width - widgetSize.width).coerceAtLeast(0).toFloat())
@@ -206,7 +273,11 @@ private fun DraggableWidget(
                     Modifier
                         .border(1.dp, Color(0xFFFFC107), RoundedCornerShape(6.dp))
                         .pointerInput(Unit) {
-                            detectDragGestures { change, dragAmount ->
+                            detectDragGestures(
+                                onDragStart = { isDragging = true },
+                                onDragEnd = { isDragging = false },
+                                onDragCancel = { isDragging = false },
+                            ) { change, dragAmount ->
                                 change.consume()
                                 val maxX = (containerSize.width - widgetSize.width).coerceAtLeast(0).toFloat()
                                 val maxY = (containerSize.height - widgetSize.height).coerceAtLeast(0).toFloat()
@@ -221,15 +292,18 @@ private fun DraggableWidget(
                 } else Modifier
             ),
     ) {
-        Column {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (isEditMode) {
+                extraEditContent?.invoke()
+            }
             content()
             if (isEditMode) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 2.dp),
+                    modifier = Modifier.padding(top = 2.dp),
                 ) {
                     SizeButton(icon = Icons.Filled.Remove) {
-                        if (fontSize > 8) onFontSizeChange(fontSize - 2)
+                        if (fontSize > minSize) onFontSizeChange(fontSize - sizeStep)
                     }
                     Text(
                         text = "${fontSize}",
@@ -240,7 +314,7 @@ private fun DraggableWidget(
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                     )
                     SizeButton(icon = Icons.Filled.Add) {
-                        if (fontSize < 40) onFontSizeChange(fontSize + 2)
+                        if (fontSize < maxSize) onFontSizeChange(fontSize + sizeStep)
                     }
                 }
             }
@@ -294,5 +368,21 @@ private fun WidgetBadge(text: String, fontSize: Int) {
         modifier = Modifier
             .background(Color(0xA0000000), RoundedCornerShape(6.dp))
             .padding(horizontal = 10.dp, vertical = 4.dp),
+    )
+}
+
+@Composable
+private fun MapWidgetView(bitmap: android.graphics.Bitmap, sizeDp: Int) {
+    val imageBitmap = remember(bitmap) {
+        bitmap.asImageBitmap()
+    }
+    androidx.compose.foundation.Image(
+        bitmap = imageBitmap,
+        contentDescription = "Map",
+        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+        modifier = Modifier
+            .size(sizeDp.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .border(2.dp, Color.White, RoundedCornerShape(8.dp)),
     )
 }

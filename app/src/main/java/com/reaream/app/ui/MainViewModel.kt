@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.reaream.app.chat.ChatManager
 import com.reaream.app.data.LocationProvider
+import com.reaream.app.data.MapTileProvider
 import com.reaream.app.data.SettingsRepository
 import com.reaream.app.data.model.*
 import com.reaream.app.service.StreamingService
@@ -20,6 +21,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val streamingEngine = StreamingEngine()
     val chatManager = ChatManager()
     val locationProvider = LocationProvider(application)
+    val mapTileProvider = MapTileProvider()
     val audioCapture = AudioCapture { data, timestamp ->
         streamingEngine.onAudioData(data, timestamp)
     }
@@ -34,16 +36,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 streamingEngine.widgetSettingsRef.set(s.widgets)
 
                 // Start/stop location updates based on widget config
-                if (s.widgets.locationWidget.enabled || s.widgets.speedWidget.enabled) {
+                if (s.widgets.locationWidget.enabled || s.widgets.speedWidget.enabled || s.widgets.mapWidget.enabled) {
                     locationProvider.startUpdates()
                 } else {
                     locationProvider.stopUpdates()
+                }
+
+                // Re-fetch map when zoom or marker settings change
+                val loc = locationProvider.location.value
+                if (loc != null && s.widgets.mapWidget.enabled) {
+                    mapTileProvider.updateLocation(loc, s.widgets.mapWidget.zoom, s.widgets.mapWidget.showMarker)
                 }
             }
         }
         viewModelScope.launch {
             locationProvider.location.collect { loc ->
                 streamingEngine.widgetRenderer.currentLocation.set(loc)
+                if (loc != null) {
+                    val mapConfig = settings.value.widgets.mapWidget
+                    mapTileProvider.updateLocation(loc, mapConfig.zoom, mapConfig.showMarker)
+                }
+            }
+        }
+        viewModelScope.launch {
+            mapTileProvider.mapBitmap.collect { bmp ->
+                streamingEngine.widgetRenderer.currentMapBitmap.set(bmp)
             }
         }
         viewModelScope.launch {
@@ -231,6 +248,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         audioCapture.release()
         chatManager.release()
         locationProvider.release()
+        mapTileProvider.release()
     }
 }
 

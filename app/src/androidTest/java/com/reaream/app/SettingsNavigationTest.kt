@@ -36,6 +36,18 @@ class SettingsNavigationTest {
         composeTestRule.onNodeWithText("時計を表示").assertIsDisplayed()
         composeTestRule.onNodeWithText("位置情報を表示").assertIsDisplayed()
         composeTestRule.onNodeWithText("速度を表示").assertIsDisplayed()
+        composeTestRule.onNodeWithText("地図を表示").assertIsDisplayed()
+    }
+
+    @Test
+    fun mapWidgetSettingsSectionExists() {
+        composeTestRule.onNodeWithContentDescription("Settings").performClick()
+        composeTestRule.onNodeWithText("Widgets").performClick()
+        // Verify map section exists
+        composeTestRule.onNodeWithText("地図").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("地図を表示").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("配信映像にミニマップを表示（位置情報の権限が必要）")
+            .performScrollTo().assertIsDisplayed()
     }
 
     @Test
