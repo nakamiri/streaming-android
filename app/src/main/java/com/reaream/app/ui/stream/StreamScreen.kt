@@ -90,7 +90,7 @@ fun StreamScreen(
             onCameraZoomRange = { min, max ->
                 minZoomRatio = min
                 maxZoomRatio = max
-                // If current zoom is below new min (e.g. switched to front camera), reset to 1x
+                // If current zoom is outside the new camera's supported range, reset to 1x
                 if (zoomRatio < min) zoomRatio = 1.0f
             },
             modifier = Modifier.fillMaxSize(),
