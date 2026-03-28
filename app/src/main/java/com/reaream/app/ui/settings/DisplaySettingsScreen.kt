@@ -15,7 +15,7 @@ import com.reaream.app.ui.Screen
 @Composable
 fun DisplaySettingsScreen(
     display: DisplaySettings,
-    onNavigate: (Screen) -> Unit,
+    onBack: () -> Unit,
     onUpdate: (DisplaySettings) -> Unit,
 ) {
     Scaffold(
@@ -23,7 +23,7 @@ fun DisplaySettingsScreen(
             TopAppBar(
                 title = { Text("Display") },
                 navigationIcon = {
-                    IconButton(onClick = { onNavigate(Screen.Settings) }) {
+                    IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },

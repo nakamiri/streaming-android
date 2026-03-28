@@ -1,5 +1,6 @@
 package com.reaream.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -26,6 +27,11 @@ fun ReareamApp(
     val youtubeSetupError by viewModel.youtubeSetupError.collectAsStateWithLifecycle()
     val youtubeLiveUrl by viewModel.youtubeLiveUrl.collectAsStateWithLifecycle()
     val broadcastPicker by viewModel.broadcastPicker.collectAsStateWithLifecycle()
+
+    // Handle system back: go to previous screen instead of exiting app
+    BackHandler(enabled = currentScreen !is Screen.Stream) {
+        viewModel.navigateBack()
+    }
 
     AnimatedContent(
         targetState = currentScreen,
@@ -64,11 +70,13 @@ fun ReareamApp(
 
             is Screen.Settings -> SettingsScreen(
                 onNavigate = viewModel::navigate,
+                onBack = viewModel::navigateBack,
             )
 
             is Screen.StreamSettings -> StreamSettingsScreen(
                 settings = settings,
                 onNavigate = viewModel::navigate,
+                onBack = viewModel::navigateBack,
                 onSelectStream = viewModel::selectStream,
                 onDeleteStream = viewModel::deleteStream,
             )
@@ -76,42 +84,42 @@ fun ReareamApp(
             is Screen.StreamEdit -> StreamEditScreen(
                 streamIndex = screen.index,
                 settings = settings,
-                onNavigate = viewModel::navigate,
+                onBack = viewModel::navigateBack,
                 onSave = viewModel::updateStream,
             )
 
             is Screen.CameraSettings -> CameraSettingsScreen(
                 camera = settings.camera,
-                onNavigate = viewModel::navigate,
+                onBack = viewModel::navigateBack,
                 onUpdate = viewModel::updateCameraSettings,
             )
 
             is Screen.AudioSettings -> AudioSettingsScreen(
                 audio = settings.audio,
-                onNavigate = viewModel::navigate,
+                onBack = viewModel::navigateBack,
                 onUpdate = viewModel::updateAudioSettings,
             )
 
             is Screen.DisplaySettings -> DisplaySettingsScreen(
                 display = settings.display,
-                onNavigate = viewModel::navigate,
+                onBack = viewModel::navigateBack,
                 onUpdate = viewModel::updateDisplaySettings,
             )
 
             is Screen.ChatSettings -> ChatSettingsScreen(
                 chat = settings.chat,
-                onNavigate = viewModel::navigate,
+                onBack = viewModel::navigateBack,
                 onUpdate = viewModel::updateChatSettings,
             )
 
             is Screen.WidgetSettings -> WidgetSettingsScreen(
                 widgets = settings.widgets,
-                onNavigate = viewModel::navigate,
+                onBack = viewModel::navigateBack,
                 onUpdate = viewModel::updateWidgetSettings,
             )
 
             is Screen.StreamWizard -> StreamWizardScreen(
-                onNavigate = viewModel::navigate,
+                onBack = viewModel::navigateBack,
                 onSave = { config: StreamConfig ->
                     viewModel.addStreamFromWizard(config)
                 },
