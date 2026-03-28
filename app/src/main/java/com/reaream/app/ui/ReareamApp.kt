@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.reaream.app.data.model.StreamConfig
 import com.reaream.app.ui.settings.*
 import com.reaream.app.ui.stream.StreamScreen
 
@@ -34,6 +35,10 @@ fun ReareamApp(
                 onToggleTorch = viewModel::toggleTorch,
                 onSwitchCamera = viewModel::switchCamera,
                 onOpenSettings = { viewModel.navigate(Screen.Settings) },
+                onClearError = { viewModel.streamingEngine.clearError() },
+                onVideoFrame = viewModel.streamingEngine::onVideoFrame,
+                videoWidth = settings.currentStream.resolution.width,
+                videoHeight = settings.currentStream.resolution.height,
             )
 
             is Screen.Settings -> SettingsScreen(
@@ -44,7 +49,6 @@ fun ReareamApp(
                 settings = settings,
                 onNavigate = viewModel::navigate,
                 onSelectStream = viewModel::selectStream,
-                onAddStream = viewModel::addStream,
                 onDeleteStream = viewModel::deleteStream,
             )
 
@@ -77,6 +81,13 @@ fun ReareamApp(
                 chat = settings.chat,
                 onNavigate = viewModel::navigate,
                 onUpdate = viewModel::updateChatSettings,
+            )
+
+            is Screen.StreamWizard -> StreamWizardScreen(
+                onNavigate = viewModel::navigate,
+                onSave = { config: StreamConfig ->
+                    viewModel.addStreamFromWizard(config)
+                },
             )
         }
     }

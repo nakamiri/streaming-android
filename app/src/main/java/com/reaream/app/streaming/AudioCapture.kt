@@ -27,6 +27,11 @@ class AudioCapture(
             return
         }
 
+        // Stop any existing capture before starting a new one
+        if (audioRecord != null) {
+            stop()
+        }
+
         val sampleRate = 44100
         val channelConfig = AudioFormat.CHANNEL_IN_MONO
         val audioFormat = AudioFormat.ENCODING_PCM_16BIT

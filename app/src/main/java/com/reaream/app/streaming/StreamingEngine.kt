@@ -26,7 +26,10 @@ class StreamingEngine {
     private var videoEncoder: MediaCodec? = null
     private var audioEncoder: MediaCodec? = null
     private var connection: StreamConnection? = null
+    private var currentConfig: StreamConfig? = null
     private var startTimeNanos: Long = 0L
+    private var baseVideoTimestampUs: Long = -1L
+    private var baseAudioTimestampUs: Long = -1L
     private var totalBytesSent: Long = 0L
 
     data class StreamState(
@@ -44,31 +47,56 @@ class StreamingEngine {
     fun startStreaming(config: StreamConfig) {
         if (_state.value.isStreaming || _state.value.isConnecting) return
 
+        if (config.url.isBlank()) {
+            _state.value = _state.value.copy(
+                error = "配信URLが設定されていません。設定画面でURLを入力してください。",
+            )
+            return
+        }
+
         _state.value = _state.value.copy(isConnecting = true, error = null)
+        currentConfig = config
 
         scope.launch {
             try {
-                setupEncoders(config)
+                setupAudioEncoder(config)
                 connection = createConnection(config)
-                connection?.connect()
+                withTimeout(10_000L) {
+                    connection?.connect()
+                }
 
                 startTimeNanos = System.nanoTime()
+                baseVideoTimestampUs = -1L
+                baseAudioTimestampUs = -1L
                 totalBytesSent = 0
                 _state.value = _state.value.copy(
                     isStreaming = true,
                     isConnecting = false,
                 )
                 launchStatsUpdater()
+            } catch (e: TimeoutCancellationException) {
+                Log.e(TAG, "Connection timed out", e)
+                _state.value = _state.value.copy(
+                    isStreaming = false,
+                    isConnecting = false,
+                    error = "接続がタイムアウトしました",
+                )
+                releaseEncoders()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start streaming", e)
                 _state.value = _state.value.copy(
                     isStreaming = false,
                     isConnecting = false,
-                    error = e.message ?: "Connection failed",
+                    error = e.message?.takeIf { it.isNotBlank() }
+                        ?: "接続に失敗しました: ${e.javaClass.simpleName}",
                 )
                 releaseEncoders()
             }
         }
+    }
+
+    fun clearError() {
+        _state.value = _state.value.copy(error = null)
     }
 
     fun stopStreaming() {
@@ -80,20 +108,33 @@ class StreamingEngine {
             }
             connection = null
             releaseEncoders()
+            currentConfig = null
             _state.value = StreamState()
         }
     }
 
-    fun onVideoFrame(buffer: ByteBuffer, presentationTimeUs: Long) {
+    fun onVideoFrame(buffer: ByteBuffer, width: Int, height: Int, presentationTimeUs: Long) {
         if (!_state.value.isStreaming) return
+
+        // Lazy-init video encoder with actual camera resolution
+        if (videoEncoder == null) {
+            val config = currentConfig ?: return
+            setupVideoEncoder(config, width, height)
+            Log.i(TAG, "Video encoder initialized: ${width}x${height}")
+        }
+
+        if (baseVideoTimestampUs < 0) baseVideoTimestampUs = presentationTimeUs
+        val relativeUs = presentationTimeUs - baseVideoTimestampUs
         try {
             videoEncoder?.let { encoder ->
                 val inputIndex = encoder.dequeueInputBuffer(0)
                 if (inputIndex >= 0) {
                     val inputBuffer = encoder.getInputBuffer(inputIndex) ?: return
                     inputBuffer.clear()
-                    inputBuffer.put(buffer)
-                    encoder.queueInputBuffer(inputIndex, 0, buffer.remaining(), presentationTimeUs, 0)
+                    val size = minOf(buffer.remaining(), inputBuffer.remaining())
+                    val slice = buffer.slice().limit(size) as ByteBuffer
+                    inputBuffer.put(slice)
+                    encoder.queueInputBuffer(inputIndex, 0, size, relativeUs, 0)
                 }
 
                 val info = MediaCodec.BufferInfo()
@@ -103,7 +144,7 @@ class StreamingEngine {
                     if (outputBuffer != null && info.size > 0) {
                         val data = ByteArray(info.size)
                         outputBuffer.get(data)
-                        connection?.sendVideo(data, info.presentationTimeUs)
+                        connection?.sendVideo(data, info.presentationTimeUs, info.flags)
                         totalBytesSent += data.size
                     }
                     encoder.releaseOutputBuffer(outputIndex, false)
@@ -117,14 +158,17 @@ class StreamingEngine {
 
     fun onAudioData(buffer: ByteArray, presentationTimeUs: Long) {
         if (!_state.value.isStreaming) return
+        if (baseAudioTimestampUs < 0) baseAudioTimestampUs = presentationTimeUs
+        val relativeUs = presentationTimeUs - baseAudioTimestampUs
         try {
             audioEncoder?.let { encoder ->
                 val inputIndex = encoder.dequeueInputBuffer(0)
                 if (inputIndex >= 0) {
                     val inputBuffer = encoder.getInputBuffer(inputIndex) ?: return
                     inputBuffer.clear()
-                    inputBuffer.put(buffer)
-                    encoder.queueInputBuffer(inputIndex, 0, buffer.size, presentationTimeUs, 0)
+                    val size = minOf(buffer.size, inputBuffer.remaining())
+                    inputBuffer.put(buffer, 0, size)
+                    encoder.queueInputBuffer(inputIndex, 0, size, relativeUs, 0)
                 }
 
                 val info = MediaCodec.BufferInfo()
@@ -134,7 +178,7 @@ class StreamingEngine {
                     if (outputBuffer != null && info.size > 0) {
                         val data = ByteArray(info.size)
                         outputBuffer.get(data)
-                        connection?.sendAudio(data, info.presentationTimeUs)
+                        connection?.sendAudio(data, info.presentationTimeUs, info.flags)
                         totalBytesSent += data.size
                     }
                     encoder.releaseOutputBuffer(outputIndex, false)
@@ -146,23 +190,19 @@ class StreamingEngine {
         }
     }
 
-    private fun setupEncoders(config: StreamConfig) {
+    private fun setupVideoEncoder(config: StreamConfig, width: Int, height: Int) {
         val videoMime = when (config.videoCodec) {
             VideoCodec.H264 -> MediaFormat.MIMETYPE_VIDEO_AVC
             VideoCodec.H265 -> MediaFormat.MIMETYPE_VIDEO_HEVC
         }
 
-        val videoFormat = MediaFormat.createVideoFormat(
-            videoMime,
-            config.resolution.width,
-            config.resolution.height
-        ).apply {
+        val videoFormat = MediaFormat.createVideoFormat(videoMime, width, height).apply {
             setInteger(MediaFormat.KEY_BIT_RATE, config.videoBitrate * 1000)
             setInteger(MediaFormat.KEY_FRAME_RATE, config.fps)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
             setInteger(
                 MediaFormat.KEY_COLOR_FORMAT,
-                MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
+                MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible
             )
         }
 
@@ -170,7 +210,9 @@ class StreamingEngine {
             configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             start()
         }
+    }
 
+    private fun setupAudioEncoder(config: StreamConfig) {
         val audioFormat = MediaFormat.createAudioFormat(
             MediaFormat.MIMETYPE_AUDIO_AAC,
             44100,
@@ -189,7 +231,12 @@ class StreamingEngine {
     private fun createConnection(config: StreamConfig): StreamConnection {
         val url = buildStreamUrl(config)
         return when (config.protocol) {
-            StreamProtocol.RTMP, StreamProtocol.RTMPS -> RtmpConnection(url)
+            StreamProtocol.RTMP, StreamProtocol.RTMPS -> RtmpConnection(
+                url = url,
+                videoWidth = config.resolution.width,
+                videoHeight = config.resolution.height,
+                sampleRate = 44100,
+            )
             StreamProtocol.SRT -> SrtConnection(url, config.srtLatency)
             StreamProtocol.RIST -> RtmpConnection(url) // Placeholder, RIST needs native lib
         }
