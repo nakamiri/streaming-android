@@ -81,4 +81,4 @@ youtube.client.secret=YOUR_CLIENT_SECRET
 
 ## ライセンス
 
-Private
+[MIT License](LICENSE)
