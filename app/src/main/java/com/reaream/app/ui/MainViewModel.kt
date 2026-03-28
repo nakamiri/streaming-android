@@ -44,6 +44,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun startStreaming() {
         val config = settings.value.currentStream
+
+        // Validate URL before starting anything
+        if (config.url.isBlank()) {
+            streamingEngine.startStreaming(config) // Will set error state
+            return
+        }
+
         val context = getApplication<Application>()
 
         // Start foreground service
@@ -130,6 +137,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun addStreamFromWizard(config: StreamConfig) {
+        viewModelScope.launch {
+            settingsRepo.update {
+                val newStreams = it.streams + config
+                it.copy(streams = newStreams, selectedStreamIndex = newStreams.size - 1)
+            }
+        }
+    }
+
     fun deleteStream(index: Int) {
         viewModelScope.launch {
             settingsRepo.update {
@@ -187,4 +203,5 @@ sealed class Screen {
     data object DisplaySettings : Screen()
     data object ChatSettings : Screen()
     data class StreamEdit(val index: Int) : Screen()
+    data object StreamWizard : Screen()
 }
