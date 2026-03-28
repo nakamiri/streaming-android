@@ -229,6 +229,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun startStreamingWithConfig(config: StreamConfig) {
+        // Clear any stale YouTube broadcast ID when starting a non-OAuth stream,
+        // to avoid the stop confirmation dialog appearing for unrelated sessions.
+        if (config.authType != AuthType.YOUTUBE_OAUTH) {
+            currentYoutubeBroadcastId = null
+            _youtubeLiveUrl.value = null
+        }
+
         val context = getApplication<Application>()
 
         // Start foreground service
