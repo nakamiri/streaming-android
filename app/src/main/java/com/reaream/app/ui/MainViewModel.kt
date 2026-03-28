@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.reaream.app.chat.ChatManager
+import com.reaream.app.data.LocationProvider
 import com.reaream.app.data.SettingsRepository
 import com.reaream.app.data.model.*
 import com.reaream.app.service.StreamingService
@@ -18,12 +19,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val settingsRepo = SettingsRepository(application)
     val streamingEngine = StreamingEngine()
     val chatManager = ChatManager()
+    val locationProvider = LocationProvider(application)
     val audioCapture = AudioCapture { data, timestamp ->
         streamingEngine.onAudioData(data, timestamp)
     }
 
     val settings: StateFlow<AppSettings> = settingsRepo.settings
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
+
+    init {
+        // Sync widget settings and location data to streaming engine
+        viewModelScope.launch {
+            settings.collect { s ->
+                streamingEngine.widgetSettingsRef.set(s.widgets)
+
+                // Start/stop location updates based on widget config
+                if (s.widgets.locationWidget.enabled) {
+                    locationProvider.startUpdates()
+                } else {
+                    locationProvider.stopUpdates()
+                }
+            }
+        }
+        viewModelScope.launch {
+            locationProvider.location.collect { loc ->
+                streamingEngine.widgetRenderer.currentLocation.set(loc)
+            }
+        }
+        viewModelScope.launch {
+            locationProvider.speedKmh.collect { speed ->
+                streamingEngine.widgetRenderer.currentSpeedKmh.set(speed)
+            }
+        }
+        viewModelScope.launch {
+            locationProvider.address.collect { addr ->
+                streamingEngine.widgetRenderer.currentAddress.set(addr)
+            }
+        }
+    }
 
     val streamState: StateFlow<StreamingEngine.StreamState> = streamingEngine.state
 
@@ -186,11 +219,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateWidgetSettings(widgets: WidgetSettings) {
+        viewModelScope.launch {
+            settingsRepo.update { it.copy(widgets = widgets) }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         streamingEngine.release()
         audioCapture.release()
         chatManager.release()
+        locationProvider.release()
     }
 }
 
@@ -204,4 +244,5 @@ sealed class Screen {
     data object ChatSettings : Screen()
     data class StreamEdit(val index: Int) : Screen()
     data object StreamWizard : Screen()
+    data object WidgetSettings : Screen()
 }

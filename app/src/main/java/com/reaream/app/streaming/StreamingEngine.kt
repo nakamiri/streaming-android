@@ -14,7 +14,9 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.reaream.app.data.model.WidgetSettings
 import java.nio.ByteBuffer
+import java.util.concurrent.atomic.AtomicReference
 
 class StreamingEngine {
 
@@ -22,6 +24,9 @@ class StreamingEngine {
 
     private val _state = MutableStateFlow(StreamState())
     val state: StateFlow<StreamState> = _state.asStateFlow()
+
+    val widgetRenderer = WidgetRenderer()
+    val widgetSettingsRef = AtomicReference(WidgetSettings())
 
     private var videoEncoder: MediaCodec? = null
     private var audioEncoder: MediaCodec? = null
@@ -126,14 +131,18 @@ class StreamingEngine {
         if (baseVideoTimestampUs < 0) baseVideoTimestampUs = presentationTimeUs
         val relativeUs = presentationTimeUs - baseVideoTimestampUs
         try {
+            // Apply widget overlay onto the YUV frame
+            val frameBytes = ByteArray(buffer.remaining())
+            buffer.get(frameBytes)
+            widgetRenderer.renderOntoFrame(frameBytes, width, height, widgetSettingsRef.get())
+
             videoEncoder?.let { encoder ->
                 val inputIndex = encoder.dequeueInputBuffer(0)
                 if (inputIndex >= 0) {
                     val inputBuffer = encoder.getInputBuffer(inputIndex) ?: return
                     inputBuffer.clear()
-                    val size = minOf(buffer.remaining(), inputBuffer.remaining())
-                    val slice = buffer.slice().limit(size) as ByteBuffer
-                    inputBuffer.put(slice)
+                    val size = minOf(frameBytes.size, inputBuffer.remaining())
+                    inputBuffer.put(frameBytes, 0, size)
                     encoder.queueInputBuffer(inputIndex, 0, size, relativeUs, 0)
                 }
 
@@ -292,6 +301,7 @@ class StreamingEngine {
 
     fun release() {
         stopStreaming()
+        widgetRenderer.release()
         scope.cancel()
     }
 
