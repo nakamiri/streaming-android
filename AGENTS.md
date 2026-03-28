@@ -34,8 +34,25 @@ adb logcat -c
 # アプリ再起動
 adb shell am force-stop com.reaream.app && adb shell am start -n com.reaream.app/.MainActivity
 
-# タップ操作（縦画面の再生ボタン: 画面下部中央）
-adb shell input tap 540 2200
+# タップ操作（縦画面、Pixel 7 1080x2400 基準）
+# Play/Stop ボタン:  bounds [467,2121][614,2268]
+adb shell input tap 540 2195
+# Settings ボタン:   bounds [846,2100][972,2226]
+adb shell input tap 909 2163
+# Flip ボタン:       bounds [669,2100][795,2226]
+adb shell input tap 732 2163
+# Mute ボタン:       bounds [109,2100][235,2226]
+adb shell input tap 172 2163
+# Torch ボタン:      bounds [285,2100][411,2226]
+adb shell input tap 348 2163
+# Zoom 0.5x:         bounds [311,1974][422,2100]
+adb shell input tap 366 2037
+# Zoom 1x:           bounds [422,1974][533,2100]
+adb shell input tap 477 2037
+# Zoom 2x:           bounds [533,1974][644,2100]
+adb shell input tap 588 2037
+# Zoom 5x:           bounds [644,1974][770,2100]
+adb shell input tap 707 2037
 
 # スクリーンショット取得
 adb shell screencap -p /sdcard/screen.png && adb pull /sdcard/screen.png /tmp/screen.png
