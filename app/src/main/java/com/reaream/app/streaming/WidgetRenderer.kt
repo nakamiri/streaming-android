@@ -18,6 +18,8 @@ import java.util.concurrent.atomic.AtomicReference
  */
 class WidgetRenderer {
 
+    @Volatile var screenDensity: Float = 2.0f
+
     val currentLocation = AtomicReference<Location?>(null)
     val currentAddress = AtomicReference<String?>(null)
     val currentSpeedKmh = AtomicReference(0f)
@@ -106,7 +108,7 @@ class WidgetRenderer {
 
     private fun drawMap(canvas: Canvas, w: Int, h: Int, config: MapWidgetConfig) {
         val mapBmp = currentMapBitmap.get() ?: return
-        val mapSize = (config.sizeDp * (h / 1280f) * 3f).toInt().coerceIn(50, minOf(w, h))
+        val mapSize = (config.sizeDp * screenDensity).toInt().coerceIn(50, minOf(w, h))
 
         val x = (config.x * w).coerceIn(0f, (w - mapSize).coerceAtLeast(0).toFloat())
         val y = (config.y * h).coerceIn(0f, (h - mapSize).coerceAtLeast(0).toFloat())
@@ -130,8 +132,7 @@ class WidgetRenderer {
     }
 
     private fun drawTextWidget(canvas: Canvas, w: Int, h: Int, text: String, xPct: Float, yPct: Float, fontSize: Int) {
-        // Scale font size relative to frame height (base: 14sp on 1280px height)
-        textPaint.textSize = fontSize * (h / 1280f) * 3f
+        textPaint.textSize = fontSize * screenDensity
 
         val bounds = Rect()
         textPaint.getTextBounds(text, 0, text.length, bounds)

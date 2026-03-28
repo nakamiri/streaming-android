@@ -31,6 +31,17 @@ class WidgetRendererTest {
     }
 
     @Test
+    fun `screenDensity defaults to 2_0`() {
+        assertEquals(2.0f, renderer.screenDensity, 0.01f)
+    }
+
+    @Test
+    fun `screenDensity can be updated`() {
+        renderer.screenDensity = 3.5f
+        assertEquals(3.5f, renderer.screenDensity, 0.01f)
+    }
+
+    @Test
     fun `renderOntoFrame with all disabled does not modify frame`() {
         val w = 64; val h = 64
         val frame = ByteArray(w * h * 3 / 2) { 100.toByte() }
