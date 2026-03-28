@@ -23,6 +23,8 @@ androidxTestRules = "1.6.1"
 espresso = "3.6.1"
 composeUiTest = "1.7.6"
 rootEncoder = "2.6.7"
+securityCrypto = "1.1.0-alpha06"
+browserCustomtabs = "1.8.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -61,6 +63,8 @@ compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4
 compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest", version.ref = "composeUiTest" }
 rootencoder-rtmp = { group = "com.github.pedroSG94.RootEncoder", name = "rtmp", version.ref = "rootEncoder" }
 rootencoder-common = { group = "com.github.pedroSG94.RootEncoder", name = "common", version.ref = "rootEncoder" }
+security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
+browser-customtabs = { group = "androidx.browser", name = "browser", version.ref = "browserCustomtabs" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

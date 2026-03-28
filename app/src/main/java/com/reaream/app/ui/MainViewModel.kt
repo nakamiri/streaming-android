@@ -2,17 +2,22 @@ package com.reaream.app.ui
 
 import android.app.Application
 import android.content.Intent
+import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.reaream.app.chat.ChatManager
 import com.reaream.app.data.LocationProvider
 import com.reaream.app.data.MapTileProvider
 import com.reaream.app.data.SettingsRepository
+import com.reaream.app.data.YouTubeApiClient
+import com.reaream.app.data.YouTubeAuthManager
 import com.reaream.app.data.model.*
 import com.reaream.app.service.StreamingService
 import com.reaream.app.streaming.AudioCapture
 import com.reaream.app.streaming.StreamingEngine
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -24,6 +29,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val mapTileProvider = MapTileProvider()
     val audioCapture = AudioCapture { data, timestamp ->
         streamingEngine.onAudioData(data, timestamp)
+    }
+
+    val youtubeAuthManager = YouTubeAuthManager(application)
+    val youtubeApiClient = YouTubeApiClient(youtubeAuthManager)
+
+    // YouTube broadcast ID for the current session (to end broadcast on stop)
+    private var currentYoutubeBroadcastId: String? = null
+
+    private val _youtubeLiveUrl = MutableStateFlow<String?>(null)
+    val youtubeLiveUrl: StateFlow<String?> = _youtubeLiveUrl.asStateFlow()
+
+    // Broadcast picker dialog state
+    data class BroadcastPickerState(
+        val isLoading: Boolean = false,
+        val isVisible: Boolean = false,
+        val broadcasts: List<YouTubeApiClient.BroadcastInfo> = emptyList(),
+        val config: StreamConfig? = null,
+    )
+    private val _broadcastPicker = MutableStateFlow(BroadcastPickerState())
+    val broadcastPicker: StateFlow<BroadcastPickerState> = _broadcastPicker.asStateFlow()
+
+    private val _youtubeSetupError = MutableStateFlow<String?>(null)
+    val youtubeSetupError: StateFlow<String?> = _youtubeSetupError.asStateFlow()
+
+    // OAuth callback state: emits the redirect URI when received from browser
+    private val _oauthCallback = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
+    val oauthCallback = _oauthCallback.asSharedFlow()
+
+    fun clearYoutubeSetupError() {
+        _youtubeSetupError.value = null
+    }
+
+    fun handleOAuthCallback(uri: Uri) {
+        _oauthCallback.tryEmit(uri)
     }
 
     val settings: StateFlow<AppSettings> = settingsRepo.settings
@@ -95,12 +134,83 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun startStreaming() {
         val config = settings.value.currentStream
 
+        if (config.authType == AuthType.YOUTUBE_OAUTH) {
+            startYouTubeOAuthStreaming(config)
+            return
+        }
+
         // Validate URL before starting anything
         if (config.url.isBlank()) {
             streamingEngine.startStreaming(config) // Will set error state
             return
         }
 
+        startStreamingWithConfig(config)
+    }
+
+    private fun startYouTubeOAuthStreaming(config: StreamConfig) {
+        viewModelScope.launch {
+            _youtubeSetupError.value = null
+            _broadcastPicker.value = BroadcastPickerState(isLoading = true, isVisible = true, config = config)
+
+            // Fetch existing broadcasts (upcoming + live)
+            val upcoming = youtubeApiClient.listBroadcasts("upcoming").getOrDefault(emptyList())
+            val live = youtubeApiClient.listBroadcasts("active").getOrDefault(emptyList())
+            val all = live + upcoming
+
+            _broadcastPicker.value = BroadcastPickerState(
+                isVisible = true,
+                broadcasts = all,
+                config = config,
+            )
+        }
+    }
+
+    fun dismissBroadcastPicker() {
+        _broadcastPicker.value = BroadcastPickerState()
+    }
+
+    fun startWithBroadcast(existingBroadcastId: String?) {
+        val config = _broadcastPicker.value.config ?: return
+        _broadcastPicker.value = BroadcastPickerState()
+
+        viewModelScope.launch {
+            _youtubeSetupError.value = null
+            Log.d("MainViewModel", "Starting YouTube OAuth streaming, existingBroadcast=$existingBroadcastId")
+
+            val resolutionStr = when (config.resolution) {
+                Resolution.HD_720 -> "720p"
+                Resolution.HD_1080 -> "1080p"
+                Resolution.UHD_4K -> "2160p"
+            }
+
+            val title = config.youtubeBroadcastTitle.ifBlank { "Live Stream" }
+
+            val result = youtubeApiClient.setupAndGetIngestion(
+                title = title,
+                privacyStatus = config.youtubePrivacy.apiValue,
+                resolution = resolutionStr,
+                fps = config.fps,
+                existingBroadcastId = existingBroadcastId,
+            )
+
+            result.onSuccess { (broadcastId, ingestion) ->
+                Log.d("MainViewModel", "YouTube setup success: broadcastId=$broadcastId, rtmpUrl=${ingestion.rtmpUrl}")
+                currentYoutubeBroadcastId = broadcastId
+                _youtubeLiveUrl.value = "https://youtube.com/watch?v=$broadcastId"
+                val oauthConfig = config.copy(
+                    url = ingestion.rtmpUrl,
+                    streamKey = ingestion.streamKey,
+                )
+                startStreamingWithConfig(oauthConfig)
+            }.onFailure { error ->
+                Log.e("MainViewModel", "YouTube setup failed", error)
+                _youtubeSetupError.value = error.message ?: "YouTube 配信のセットアップに失敗しました"
+            }
+        }
+    }
+
+    private fun startStreamingWithConfig(config: StreamConfig) {
         val context = getApplication<Application>()
 
         // Start foreground service
@@ -129,6 +239,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         streamingEngine.stopStreaming()
         audioCapture.stop()
         chatManager.disconnect()
+
+        // End YouTube broadcast if active
+        val broadcastId = currentYoutubeBroadcastId
+        if (broadcastId != null) {
+            viewModelScope.launch {
+                youtubeApiClient.transitionBroadcast(broadcastId, "complete")
+                currentYoutubeBroadcastId = null
+                _youtubeLiveUrl.value = null
+            }
+        }
 
         val intent = Intent(context, StreamingService::class.java).apply {
             action = StreamingService.ACTION_STOP

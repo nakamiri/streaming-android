@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -16,6 +18,26 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // YouTube OAuth: read client ID from local.properties
+        val localPropsFile = rootProject.file("local.properties")
+        val ytClientId = if (localPropsFile.exists()) {
+            Properties().apply { localPropsFile.reader().use { load(it) } }
+                .getProperty("youtube.client.id", "")
+        } else {
+            ""
+        }
+        // Reverse client ID for redirect scheme: "X.apps.googleusercontent.com" → "com.googleusercontent.apps.X"
+        val reversedClientId = ytClientId.split(".").reversed().joinToString(".")
+        val ytClientSecret = if (localPropsFile.exists()) {
+            Properties().apply { localPropsFile.reader().use { load(it) } }
+                .getProperty("youtube.client.secret", "")
+        } else {
+            ""
+        }
+        manifestPlaceholders["youtubeRedirectScheme"] = reversedClientId
+        buildConfigField("String", "YOUTUBE_CLIENT_ID", "\"$ytClientId\"")
+        buildConfigField("String", "YOUTUBE_CLIENT_SECRET", "\"$ytClientSecret\"")
     }
 
     signingConfigs {
@@ -52,6 +74,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -80,6 +103,8 @@ dependencies {
     implementation(libs.accompanist.permissions)
     implementation(libs.rootencoder.rtmp)
     implementation(libs.rootencoder.common)
+    implementation(libs.security.crypto)
+    implementation(libs.browser.customtabs)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation(libs.junit)

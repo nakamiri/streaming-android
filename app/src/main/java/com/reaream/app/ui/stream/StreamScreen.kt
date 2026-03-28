@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -57,6 +58,12 @@ fun StreamScreen(
     mapBitmap: android.graphics.Bitmap? = null,
     onUpdateWidgets: ((com.reaream.app.data.model.WidgetSettings) -> Unit)? = null,
     onRecheckPermission: (() -> Unit)? = null,
+    youtubeSetupError: String? = null,
+    onClearYoutubeError: (() -> Unit)? = null,
+    youtubeLiveUrl: String? = null,
+    broadcastPicker: com.reaream.app.ui.MainViewModel.BroadcastPickerState = com.reaream.app.ui.MainViewModel.BroadcastPickerState(),
+    onSelectBroadcast: ((String?) -> Unit)? = null,
+    onDismissBroadcastPicker: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val configuration = LocalConfiguration.current
@@ -89,6 +96,7 @@ fun StreamScreen(
                     torchEnabled = torchEnabled,
                     zoomRatio = zoomRatio,
                     hasWidgets = settings.widgets.let { it.clockWidget.enabled || it.locationWidget.enabled || it.speedWidget.enabled || it.mapWidget.enabled },
+                    youtubeLiveUrl = youtubeLiveUrl,
                     onToggleStreaming = onToggleStreaming,
                     onToggleMute = onToggleMute,
                     onToggleTorch = onToggleTorch,
@@ -105,6 +113,7 @@ fun StreamScreen(
                     torchEnabled = torchEnabled,
                     zoomRatio = zoomRatio,
                     hasWidgets = settings.widgets.let { it.clockWidget.enabled || it.locationWidget.enabled || it.speedWidget.enabled || it.mapWidget.enabled },
+                    youtubeLiveUrl = youtubeLiveUrl,
                     onToggleStreaming = onToggleStreaming,
                     onToggleMute = onToggleMute,
                     onToggleTorch = onToggleTorch,
@@ -197,12 +206,16 @@ fun StreamScreen(
         }
 
         // Error message
-        streamState.error?.let { error ->
+        val displayError = youtubeSetupError ?: streamState.error
+        displayError?.let { error ->
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .padding(24.dp)
-                    .clickable { onClearError() }
+                    .clickable {
+                        if (youtubeSetupError != null) onClearYoutubeError?.invoke()
+                        else onClearError()
+                    }
                     .background(
                         Color(0xCC000000),
                         RoundedCornerShape(12.dp),
@@ -216,7 +229,91 @@ fun StreamScreen(
                 )
             }
         }
+
+        // YouTube broadcast picker dialog
+        if (broadcastPicker.isVisible) {
+            BroadcastPickerDialog(
+                isLoading = broadcastPicker.isLoading,
+                broadcasts = broadcastPicker.broadcasts,
+                onSelect = { onSelectBroadcast?.invoke(it) },
+                onDismiss = { onDismissBroadcastPicker?.invoke() },
+            )
+        }
     }
+}
+
+@Composable
+private fun BroadcastPickerDialog(
+    isLoading: Boolean,
+    broadcasts: List<com.reaream.app.data.YouTubeApiClient.BroadcastInfo>,
+    onSelect: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { androidx.compose.material3.Text("配信枠を選択") },
+        text = {
+            if (isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    androidx.compose.material3.CircularProgressIndicator()
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Existing broadcasts
+                    broadcasts.forEach { broadcast ->
+                        val statusLabel = when (broadcast.status) {
+                            "live" -> "LIVE"
+                            "ready" -> "配信準備完了"
+                            else -> broadcast.status
+                        }
+                        val statusColor = if (broadcast.status == "live") Color(0xFFFF4444) else Color.Gray
+                        androidx.compose.material3.OutlinedCard(
+                            onClick = { onSelect(broadcast.id) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        broadcast.title,
+                                        fontSize = 14.sp,
+                                        color = Color.White,
+                                    )
+                                    Text(
+                                        statusLabel,
+                                        fontSize = 11.sp,
+                                        color = statusColor,
+                                    )
+                                }
+                                Icon(
+                                    Icons.Filled.PlayArrow,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = { onSelect(null) }) {
+                androidx.compose.material3.Text("新規作成")
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                androidx.compose.material3.Text("キャンセル")
+            }
+        },
+    )
 }
 
 @Composable
@@ -227,6 +324,7 @@ private fun LandscapeOverlay(
     torchEnabled: Boolean,
     zoomRatio: Float,
     hasWidgets: Boolean,
+    youtubeLiveUrl: String?,
     onToggleStreaming: () -> Unit,
     onToggleMute: () -> Unit,
     onToggleTorch: () -> Unit,
@@ -240,6 +338,7 @@ private fun LandscapeOverlay(
             StreamInfoOverlay(
                 streamState = streamState,
                 settings = settings,
+                youtubeLiveUrl = youtubeLiveUrl,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .statusBarsPadding(),
@@ -287,6 +386,7 @@ private fun PortraitOverlay(
     torchEnabled: Boolean,
     zoomRatio: Float,
     hasWidgets: Boolean,
+    youtubeLiveUrl: String?,
     onToggleStreaming: () -> Unit,
     onToggleMute: () -> Unit,
     onToggleTorch: () -> Unit,
@@ -305,6 +405,7 @@ private fun PortraitOverlay(
                 StreamInfoOverlay(
                     streamState = streamState,
                     settings = settings,
+                    youtubeLiveUrl = youtubeLiveUrl,
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .statusBarsPadding(),
