@@ -46,6 +46,7 @@ fun WidgetOverlay(
     locationPermissionDenied: Boolean = false,
     isEditMode: Boolean = false,
     onUpdateWidgets: ((WidgetSettings) -> Unit)? = null,
+    onRecheckPermission: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
@@ -142,17 +143,27 @@ fun WidgetOverlay(
         // Permission warning with tap to request
         val needsLocation = widgetSettings.locationWidget.enabled || widgetSettings.speedWidget.enabled
         if (needsLocation && locationPermissionDenied && !isEditMode) {
-            LocationPermissionBanner(modifier = Modifier.align(Alignment.BottomCenter))
+            LocationPermissionBanner(
+                onPermissionGranted = { onRecheckPermission?.invoke() },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
         }
     }
 }
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
-private fun LocationPermissionBanner(modifier: Modifier = Modifier) {
+private fun LocationPermissionBanner(
+    onPermissionGranted: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val permissionsState = rememberMultiplePermissionsState(
         listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-    )
+    ) { results ->
+        if (results.values.any { it }) {
+            onPermissionGranted()
+        }
+    }
 
     Text(
         text = "⚠ タップして位置情報の権限を許可",

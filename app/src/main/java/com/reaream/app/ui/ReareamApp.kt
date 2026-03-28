@@ -48,6 +48,7 @@ fun ReareamApp(
                 speedKmh = speedKmh,
                 locationPermissionDenied = locationPermissionDenied,
                 onUpdateWidgets = viewModel::updateWidgetSettings,
+                onRecheckPermission = { viewModel.locationProvider.recheckPermission() },
             )
 
             is Screen.Settings -> SettingsScreen(

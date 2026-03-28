@@ -99,6 +99,16 @@ class LocationProvider(private val context: Context) {
         if (!started) Log.e(TAG, "No location providers available")
     }
 
+    fun recheckPermission() {
+        if (_permissionDenied.value) {
+            val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            if (hasPerm) {
+                _permissionDenied.value = false
+                startUpdates()
+            }
+        }
+    }
+
     fun stopUpdates() {
         if (!isRunning) return
         locationManager?.removeUpdates(locationListener)
