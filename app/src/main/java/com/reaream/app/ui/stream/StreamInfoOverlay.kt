@@ -1,12 +1,18 @@
 package com.reaream.app.ui.stream
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -17,6 +23,7 @@ import com.reaream.app.streaming.StreamingEngine
 fun StreamInfoOverlay(
     streamState: StreamingEngine.StreamState,
     settings: AppSettings,
+    youtubeLiveUrl: String? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -67,6 +74,25 @@ fun StreamInfoOverlay(
             val minutes = (streamState.uptime % 3600) / 60
             val seconds = streamState.uptime % 60
             InfoText(String.format("%02d:%02d:%02d", hours, minutes, seconds))
+        }
+
+        if (youtubeLiveUrl != null) {
+            val context = LocalContext.current
+            var copied by remember { mutableStateOf(false) }
+            Icon(
+                imageVector = if (copied) Icons.Filled.Check else Icons.Filled.Link,
+                contentDescription = "Copy YouTube URL",
+                tint = if (copied) Color(0xFF4CAF50) else Color.White,
+                modifier = Modifier
+                    .size(18.dp)
+                    .clickable {
+                        val clipboardManager = context.getSystemService(android.content.ClipboardManager::class.java)
+                        clipboardManager?.setPrimaryClip(
+                            android.content.ClipData.newPlainText("YouTube URL", youtubeLiveUrl)
+                        )
+                        copied = true
+                    },
+            )
         }
     }
 }

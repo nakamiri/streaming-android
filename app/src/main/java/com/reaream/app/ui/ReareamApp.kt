@@ -25,6 +25,7 @@ fun ReareamApp(
     val mapBitmap by viewModel.mapTileProvider.mapBitmap.collectAsStateWithLifecycle()
     val youtubeSetupError by viewModel.youtubeSetupError.collectAsStateWithLifecycle()
     val youtubeLiveUrl by viewModel.youtubeLiveUrl.collectAsStateWithLifecycle()
+    val broadcastPicker by viewModel.broadcastPicker.collectAsStateWithLifecycle()
 
     AnimatedContent(
         targetState = currentScreen,
@@ -56,6 +57,9 @@ fun ReareamApp(
                 youtubeSetupError = youtubeSetupError,
                 onClearYoutubeError = { viewModel.clearYoutubeSetupError() },
                 youtubeLiveUrl = youtubeLiveUrl,
+                broadcastPicker = broadcastPicker,
+                onSelectBroadcast = viewModel::startWithBroadcast,
+                onDismissBroadcastPicker = viewModel::dismissBroadcastPicker,
             )
 
             is Screen.Settings -> SettingsScreen(
