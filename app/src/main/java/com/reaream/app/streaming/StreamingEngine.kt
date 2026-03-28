@@ -36,6 +36,7 @@ class StreamingEngine {
     private var baseVideoTimestampUs: Long = -1L
     private var baseAudioTimestampUs: Long = -1L
     private var totalBytesSent: Long = 0L
+    private var encoderColorFormat: Int = MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible
 
     data class StreamState(
         val isStreaming: Boolean = false,
@@ -134,10 +135,13 @@ class StreamingEngine {
         if (baseVideoTimestampUs < 0) baseVideoTimestampUs = presentationTimeUs
         val relativeUs = presentationTimeUs - baseVideoTimestampUs
         try {
-            // Apply widget overlay onto the YUV frame
-            val frameBytes = ByteArray(buffer.remaining())
-            buffer.get(frameBytes)
-            widgetRenderer.renderOntoFrame(frameBytes, width, height, widgetSettingsRef.get())
+            // Apply widget overlay onto the I420 YUV frame
+            val i420Bytes = ByteArray(buffer.remaining())
+            buffer.get(i420Bytes)
+            widgetRenderer.renderOntoFrame(i420Bytes, width, height, widgetSettingsRef.get())
+
+            // Convert I420 to the format the encoder actually expects
+            val frameBytes = convertI420ForEncoder(i420Bytes, width, height)
 
             videoEncoder?.let { encoder ->
                 val inputIndex = encoder.dequeueInputBuffer(0)
@@ -222,6 +226,60 @@ class StreamingEngine {
         videoEncoder = MediaCodec.createEncoderByType(videoMime).apply {
             configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             start()
+
+            // Query actual color format the encoder uses after start()
+            val inputFormat = this.inputFormat
+            encoderColorFormat = inputFormat.getInteger(
+                MediaFormat.KEY_COLOR_FORMAT,
+                MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible
+            )
+            Log.i(TAG, "Encoder actual color format: $encoderColorFormat (0x${encoderColorFormat.toString(16)})")
+        }
+    }
+
+    /**
+     * Convert I420 frame to the format expected by the hardware encoder.
+     * I420: [Y][U][V] (planar)
+     * NV12 (COLOR_FormatYUV420SemiPlanar): [Y][UVUV...] (semi-planar, U first)
+     * NV21 (COLOR_FormatYUV420PackedSemiPlanar): [Y][VUVU...] (semi-planar, V first)
+     */
+    @Suppress("DEPRECATION")
+    private fun convertI420ForEncoder(i420: ByteArray, width: Int, height: Int): ByteArray {
+        val ySize = width * height
+        val uvSize = ySize / 4
+
+        return when (encoderColorFormat) {
+            // Semi-planar NV12: Y + interleaved UV
+            MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar,
+            0x7F420888 /* COLOR_FormatYUV420Flexible often means NV12 on HW encoders */ -> {
+                val nv12 = ByteArray(ySize + ySize / 2)
+                // Copy Y plane as-is
+                System.arraycopy(i420, 0, nv12, 0, ySize)
+                // Interleave U and V
+                val uOffset = ySize
+                val vOffset = ySize + uvSize
+                var nv12Offset = ySize
+                for (i in 0 until uvSize) {
+                    nv12[nv12Offset++] = i420[uOffset + i]
+                    nv12[nv12Offset++] = i420[vOffset + i]
+                }
+                nv12
+            }
+            // Planar I420 (COLOR_FormatYUV420Planar) — no conversion needed
+            MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar -> i420
+            // Unknown/flexible — try NV12 as it's the most common HW encoder format
+            else -> {
+                val nv12 = ByteArray(ySize + ySize / 2)
+                System.arraycopy(i420, 0, nv12, 0, ySize)
+                val uOffset = ySize
+                val vOffset = ySize + uvSize
+                var nv12Offset = ySize
+                for (i in 0 until uvSize) {
+                    nv12[nv12Offset++] = i420[uOffset + i]
+                    nv12[nv12Offset++] = i420[vOffset + i]
+                }
+                nv12
+            }
         }
     }
 
