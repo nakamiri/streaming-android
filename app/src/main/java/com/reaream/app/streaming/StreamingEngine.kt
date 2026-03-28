@@ -45,6 +45,8 @@ class StreamingEngine {
         val uptime: Long = 0L,
         val error: String? = null,
         val connectionQuality: ConnectionQuality = ConnectionQuality.UNKNOWN,
+        val videoWidth: Int = 0,
+        val videoHeight: Int = 0,
     )
 
     enum class ConnectionQuality { UNKNOWN, GOOD, FAIR, POOR }
@@ -126,6 +128,7 @@ class StreamingEngine {
             val config = currentConfig ?: return
             setupVideoEncoder(config, width, height)
             Log.i(TAG, "Video encoder initialized: ${width}x${height}")
+            _state.value = _state.value.copy(videoWidth = width, videoHeight = height)
         }
 
         if (baseVideoTimestampUs < 0) baseVideoTimestampUs = presentationTimeUs
@@ -209,6 +212,7 @@ class StreamingEngine {
             setInteger(MediaFormat.KEY_BIT_RATE, config.videoBitrate * 1000)
             setInteger(MediaFormat.KEY_FRAME_RATE, config.fps)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
+            setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
             setInteger(
                 MediaFormat.KEY_COLOR_FORMAT,
                 MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible
