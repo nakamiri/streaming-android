@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -58,6 +59,7 @@ fun StreamScreen(
     mapBitmap: android.graphics.Bitmap? = null,
     onUpdateWidgets: ((com.reaream.app.data.model.WidgetSettings) -> Unit)? = null,
     onRecheckPermission: (() -> Unit)? = null,
+    onSetDensity: ((Float) -> Unit)? = null,
     youtubeSetupError: String? = null,
     onClearYoutubeError: (() -> Unit)? = null,
     youtubeLiveUrl: String? = null,
@@ -72,6 +74,8 @@ fun StreamScreen(
     var minZoomRatio by remember { mutableFloatStateOf(1.0f) }
     var maxZoomRatio by remember { mutableFloatStateOf(10.0f) }
     var widgetEditMode by remember { mutableStateOf(false) }
+    val density = LocalDensity.current.density
+    LaunchedEffect(density) { onSetDensity?.invoke(density) }
 
     Box(
         modifier = modifier
@@ -138,18 +142,33 @@ fun StreamScreen(
             }
         }
 
-        // Widget overlay
-        WidgetOverlay(
-            widgetSettings = settings.widgets,
-            currentLocation = currentLocation,
-            currentAddress = currentAddress,
-            speedKmh = speedKmh,
-            mapBitmap = mapBitmap,
-            locationPermissionDenied = locationPermissionDenied,
-            isEditMode = widgetEditMode,
-            onUpdateWidgets = onUpdateWidgets,
-            onRecheckPermission = onRecheckPermission,
-        )
+        // Widget overlay — constrained to the same aspect ratio as the video frame
+        // so that widget positions (x/y fractions) match between the UI and the encoded stream.
+        val videoAspectRatio = if (isLandscape) {
+            maxOf(videoWidth, videoHeight).toFloat() / minOf(videoWidth, videoHeight).toFloat()
+        } else {
+            minOf(videoWidth, videoHeight).toFloat() / maxOf(videoWidth, videoHeight).toFloat()
+        }
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .then(
+                    if (isLandscape) Modifier.fillMaxHeight().aspectRatio(videoAspectRatio)
+                    else Modifier.fillMaxWidth().aspectRatio(videoAspectRatio)
+                ),
+        ) {
+            WidgetOverlay(
+                widgetSettings = settings.widgets,
+                currentLocation = currentLocation,
+                currentAddress = currentAddress,
+                speedKmh = speedKmh,
+                mapBitmap = mapBitmap,
+                locationPermissionDenied = locationPermissionDenied,
+                isEditMode = widgetEditMode,
+                onUpdateWidgets = onUpdateWidgets,
+                onRecheckPermission = onRecheckPermission,
+            )
+        }
 
         // Widget edit mode buttons (reset/done)
         if (widgetEditMode) {
@@ -494,7 +513,7 @@ fun CameraPreview(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
             )
-            scaleType = PreviewView.ScaleType.FILL_CENTER
+            scaleType = PreviewView.ScaleType.FIT_CENTER
             implementationMode = PreviewView.ImplementationMode.PERFORMANCE
         }
     }
@@ -511,10 +530,6 @@ fun CameraPreview(
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
-            val preview = Preview.Builder().build().also {
-                it.surfaceProvider = previewView.surfaceProvider
-            }
-
             try {
                 cameraProvider.unbindAll()
 
@@ -537,6 +552,11 @@ fun CameraPreview(
                             )
                         )
                         .build()
+                    val preview = Preview.Builder()
+                        .setResolutionSelector(resolutionSelector)
+                        .build().also {
+                            it.surfaceProvider = previewView.surfaceProvider
+                        }
                     val imageAnalysis = ImageAnalysis.Builder()
                         .setResolutionSelector(resolutionSelector)
                         .setTargetRotation(targetRotation)
@@ -577,6 +597,9 @@ fun CameraPreview(
                         onCameraZoomRange?.invoke(zs.minZoomRatio, zs.maxZoomRatio)
                     }
                 } else {
+                    val preview = Preview.Builder().build().also {
+                        it.surfaceProvider = previewView.surfaceProvider
+                    }
                     val camera = cameraProvider.bindToLifecycle(
                         lifecycleOwner,
                         cameraSelector,
