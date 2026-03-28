@@ -94,6 +94,10 @@ adb shell screencap -p /sdcard/screen.png && adb pull /sdcard/screen.png /tmp/sc
 #   地図ウィジェットは上部に🔍ズーム操作ボタンあり
 #   「リセット」で全ウィジェット位置・サイズを初期値に戻す
 
+# 横画面のコントロールバー
+# 2列レイアウト: 左列にズームセレクター、右列にコントロールボタン（スクロール可能）
+# 横画面でボタンが見切れる場合は右列をスクロールして操作
+
 # エミュレータの位置情報を設定
 adb emu geo fix 139.6917 35.6895   # 東京
 adb emu geo fix 135.5023 34.6937   # 大阪
@@ -154,6 +158,12 @@ YouTube アカウント連携で配信する機能。Chrome Custom Tabs + PKCE O
 2. ダイアログに「LIVE」ステータスの配信枠が表示される
 3. その枠を選択 → 既存ストリームの RTMP URL/キーを再取得して配信再開
 
+#### カメラ解像度
+- CameraX の `ResolutionSelector` で配信解像度に最も近い 16:9 解像度を自動選択
+- `setTargetRotation` で端末の向きに合わせた回転を適用（横画面では rotation=0）
+- 実際のエンコード解像度は配信中の左上情報表示に表示される
+- エミュレータのカメラは 16:9 で最大 1280x720。実機では 1920x1080 が選択される
+
 #### 関連ファイル
 
 - `YouTubeAuthManager.kt` — OAuth 認証、PKCE、トークン管理
@@ -161,6 +171,22 @@ YouTube アカウント連携で配信する機能。Chrome Custom Tabs + PKCE O
 - `OAuthRedirectActivity.kt` — ブラウザリダイレクト受信
 - `StreamWizardScreen.kt` — ウィザード UI（認証/配信枠設定ステップ）
 - `StreamConfig.kt` — `AuthType.YOUTUBE_OAUTH` / `YouTubePrivacy` enum
+
+### 未確認機能
+
+#### 動作確認予定
+- [ ] RTMPS 配信（Twitch 等）
+- [ ] SRT 配信
+- [ ] RIST 配信
+- [ ] ストリームキー方式での配信
+- [ ] H.265 (HEVC) エンコード
+- [ ] 4K 解像度での配信
+- [ ] Twitch チャット表示
+
+#### 実機テスト予定
+- [ ] トーチ（ライト）
+- [ ] 映像安定化
+- [ ] 1080p 解像度での配信（エミュレータカメラは 720p まで）
 
 ### ログ確認
 

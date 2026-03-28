@@ -4,7 +4,9 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -73,50 +75,63 @@ fun ControlBar(
     }
 
     if (isLandscape) {
-        // Vertical layout (right side)
-        Column(
-            modifier = modifier
-                .padding(12.dp)
-                .background(
-                    Color.Black.copy(alpha = 0.5f),
-                    RoundedCornerShape(16.dp),
-                )
-                .padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+        // Two-column layout: zoom on left, controls on right
+        Row(
+            modifier = modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            streamButton()
-            ZoomSelector(zoomRatio = zoomRatio, onZoomChange = onZoomChange, isLandscape = true)
-            ControlButton(
-                icon = if (isMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
-                label = if (isMuted) "Unmute" else "Mute",
-                isActive = isMuted,
-                activeColor = Color(0xFFFF6B6B),
-                onClick = onToggleMute,
-            )
-            ControlButton(
-                icon = if (torchEnabled) Icons.Filled.FlashOn else Icons.Filled.FlashOff,
-                label = "Torch",
-                isActive = torchEnabled,
-                activeColor = Color(0xFFFFC107),
-                onClick = onToggleTorch,
-            )
-            ControlButton(
-                icon = Icons.Filled.Cameraswitch,
-                label = "Flip",
-                onClick = onSwitchCamera,
-            )
-            ControlButton(
-                icon = Icons.Filled.Settings,
-                label = "Settings",
-                onClick = onOpenSettings,
-            )
-            if (hasWidgets) {
+            // Left column: zoom
+            Column(
+                modifier = Modifier
+                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                    .padding(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                ZoomSelector(zoomRatio = zoomRatio, onZoomChange = onZoomChange, isLandscape = true)
+            }
+
+            // Right column: controls (scrollable)
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                streamButton()
                 ControlButton(
-                    icon = Icons.Filled.Edit,
-                    label = "Widgets",
-                    onClick = onEditWidgets,
+                    icon = if (isMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
+                    label = if (isMuted) "Unmute" else "Mute",
+                    isActive = isMuted,
+                    activeColor = Color(0xFFFF6B6B),
+                    onClick = onToggleMute,
                 )
+                ControlButton(
+                    icon = if (torchEnabled) Icons.Filled.FlashOn else Icons.Filled.FlashOff,
+                    label = "Torch",
+                    isActive = torchEnabled,
+                    activeColor = Color(0xFFFFC107),
+                    onClick = onToggleTorch,
+                )
+                ControlButton(
+                    icon = Icons.Filled.Cameraswitch,
+                    label = "Flip",
+                    onClick = onSwitchCamera,
+                )
+                ControlButton(
+                    icon = Icons.Filled.Settings,
+                    label = "Settings",
+                    onClick = onOpenSettings,
+                )
+                if (hasWidgets) {
+                    ControlButton(
+                        icon = Icons.Filled.Edit,
+                        label = "Widgets",
+                        onClick = onEditWidgets,
+                    )
+                }
             }
         }
     } else {

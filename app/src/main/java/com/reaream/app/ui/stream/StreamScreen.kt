@@ -84,6 +84,7 @@ fun StreamScreen(
             onVideoFrame = onVideoFrame,
             videoWidth = videoWidth,
             videoHeight = videoHeight,
+            isLandscape = isLandscape,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -372,8 +373,8 @@ private fun LandscapeOverlay(
             onZoomChange = onZoomChange,
             onEditWidgets = onEditWidgets,
             modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .navigationBarsPadding(),
+                .align(Alignment.CenterEnd)
+                .systemBarsPadding(),
         )
     }
 }
@@ -454,6 +455,7 @@ fun CameraPreview(
     onVideoFrame: ((ByteBuffer, Int, Int, Long) -> Unit)? = null,
     videoWidth: Int = 1280,
     videoHeight: Int = 720,
+    isLandscape: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -496,21 +498,47 @@ fun CameraPreview(
                 cameraProvider.unbindAll()
 
                 if (onVideoFrame != null) {
+                    val targetRotation = if (isLandscape) android.view.Surface.ROTATION_90 else android.view.Surface.ROTATION_0
+                    // ResolutionStrategy size must be in the device's natural orientation (portrait = short x long)
+                    val shortSide = minOf(videoWidth, videoHeight)
+                    val longSide = maxOf(videoWidth, videoHeight)
+                    val resolutionSelector = androidx.camera.core.resolutionselector.ResolutionSelector.Builder()
+                        .setResolutionStrategy(
+                            androidx.camera.core.resolutionselector.ResolutionStrategy(
+                                Size(shortSide, longSide),
+                                androidx.camera.core.resolutionselector.ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
+                            )
+                        )
+                        .setAspectRatioStrategy(
+                            androidx.camera.core.resolutionselector.AspectRatioStrategy(
+                                androidx.camera.core.AspectRatio.RATIO_16_9,
+                                androidx.camera.core.resolutionselector.AspectRatioStrategy.FALLBACK_RULE_AUTO,
+                            )
+                        )
+                        .build()
                     val imageAnalysis = ImageAnalysis.Builder()
-                        .setTargetResolution(Size(videoWidth, videoHeight))
+                        .setResolutionSelector(resolutionSelector)
+                        .setTargetRotation(targetRotation)
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                         .build()
                         .also { analysis ->
+                            var frameCount = 0
                             analysis.setAnalyzer(analysisExecutor) { imageProxy ->
                                 val srcW = imageProxy.width
                                 val srcH = imageProxy.height
                                 val rotation = imageProxy.imageInfo.rotationDegrees
+                                if (frameCount++ == 0) {
+                                    android.util.Log.d("CameraPreview", "First frame: src=${srcW}x${srcH}, rotation=$rotation")
+                                }
                                 val yuv = imageProxyToYuv420(imageProxy)
                                 val timestampUs = imageProxy.imageInfo.timestamp / 1000
                                 imageProxy.close()
 
                                 val frame = com.reaream.app.streaming.YuvUtils.rotateI420(yuv, srcW, srcH, rotation)
+                                if (frameCount == 1) {
+                                    android.util.Log.d("CameraPreview", "After rotate: ${frame.width}x${frame.height}")
+                                }
                                 onVideoFrame(ByteBuffer.wrap(frame.data), frame.width, frame.height, timestampUs)
                             }
                         }
