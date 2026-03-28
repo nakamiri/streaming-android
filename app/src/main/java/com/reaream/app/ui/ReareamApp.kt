@@ -18,6 +18,9 @@ fun ReareamApp(
     val torchEnabled by viewModel.torchEnabled.collectAsStateWithLifecycle()
     val currentScreen by viewModel.currentScreen.collectAsStateWithLifecycle()
     val chatMessages by viewModel.chatManager.messages.collectAsStateWithLifecycle()
+    val currentLocation by viewModel.locationProvider.location.collectAsStateWithLifecycle()
+    val currentAddress by viewModel.locationProvider.address.collectAsStateWithLifecycle()
+    val speedKmh by viewModel.locationProvider.speedKmh.collectAsStateWithLifecycle()
 
     AnimatedContent(
         targetState = currentScreen,
@@ -39,6 +42,10 @@ fun ReareamApp(
                 onVideoFrame = viewModel.streamingEngine::onVideoFrame,
                 videoWidth = settings.currentStream.resolution.width,
                 videoHeight = settings.currentStream.resolution.height,
+                currentLocation = currentLocation,
+                currentAddress = currentAddress,
+                speedKmh = speedKmh,
+                onUpdateWidgets = viewModel::updateWidgetSettings,
             )
 
             is Screen.Settings -> SettingsScreen(
@@ -81,6 +88,12 @@ fun ReareamApp(
                 chat = settings.chat,
                 onNavigate = viewModel::navigate,
                 onUpdate = viewModel::updateChatSettings,
+            )
+
+            is Screen.WidgetSettings -> WidgetSettingsScreen(
+                widgets = settings.widgets,
+                onNavigate = viewModel::navigate,
+                onUpdate = viewModel::updateWidgetSettings,
             )
 
             is Screen.StreamWizard -> StreamWizardScreen(

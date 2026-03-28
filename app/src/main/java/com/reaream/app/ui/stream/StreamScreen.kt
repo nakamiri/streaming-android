@@ -13,6 +13,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,11 +50,16 @@ fun StreamScreen(
     onVideoFrame: ((ByteBuffer, Int, Int, Long) -> Unit)? = null,
     videoWidth: Int = 1280,
     videoHeight: Int = 720,
+    currentLocation: android.location.Location? = null,
+    currentAddress: String? = null,
+    speedKmh: Float = 0f,
+    onUpdateWidgets: ((com.reaream.app.data.model.WidgetSettings) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     var zoomRatio by remember { mutableFloatStateOf(1.0f) }
+    var widgetEditMode by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -68,34 +77,112 @@ fun StreamScreen(
             modifier = Modifier.fillMaxSize(),
         )
 
-        if (isLandscape) {
-            LandscapeOverlay(
-                settings = settings,
-                streamState = streamState,
-                chatMessages = chatMessages,
-                torchEnabled = torchEnabled,
-                zoomRatio = zoomRatio,
-                onToggleStreaming = onToggleStreaming,
-                onToggleMute = onToggleMute,
-                onToggleTorch = onToggleTorch,
-                onSwitchCamera = onSwitchCamera,
-                onOpenSettings = onOpenSettings,
-                onZoomChange = { zoomRatio = it },
-            )
-        } else {
-            PortraitOverlay(
-                settings = settings,
-                streamState = streamState,
-                chatMessages = chatMessages,
-                torchEnabled = torchEnabled,
-                zoomRatio = zoomRatio,
-                onToggleStreaming = onToggleStreaming,
-                onToggleMute = onToggleMute,
-                onToggleTorch = onToggleTorch,
-                onSwitchCamera = onSwitchCamera,
-                onOpenSettings = onOpenSettings,
-                onZoomChange = { zoomRatio = it },
-            )
+        if (!widgetEditMode) {
+            if (isLandscape) {
+                LandscapeOverlay(
+                    settings = settings,
+                    streamState = streamState,
+                    chatMessages = chatMessages,
+                    torchEnabled = torchEnabled,
+                    zoomRatio = zoomRatio,
+                    hasWidgets = settings.widgets.clockWidget.enabled || settings.widgets.locationWidget.enabled || settings.widgets.speedWidget.enabled,
+                    onToggleStreaming = onToggleStreaming,
+                    onToggleMute = onToggleMute,
+                    onToggleTorch = onToggleTorch,
+                    onSwitchCamera = onSwitchCamera,
+                    onOpenSettings = onOpenSettings,
+                    onZoomChange = { zoomRatio = it },
+                    onEditWidgets = { widgetEditMode = true },
+                )
+            } else {
+                PortraitOverlay(
+                    settings = settings,
+                    streamState = streamState,
+                    chatMessages = chatMessages,
+                    torchEnabled = torchEnabled,
+                    zoomRatio = zoomRatio,
+                    hasWidgets = settings.widgets.clockWidget.enabled || settings.widgets.locationWidget.enabled || settings.widgets.speedWidget.enabled,
+                    onToggleStreaming = onToggleStreaming,
+                    onToggleMute = onToggleMute,
+                    onToggleTorch = onToggleTorch,
+                    onSwitchCamera = onSwitchCamera,
+                    onOpenSettings = onOpenSettings,
+                    onZoomChange = { zoomRatio = it },
+                    onEditWidgets = { widgetEditMode = true },
+                )
+            }
+        }
+
+        // Widget overlay
+        WidgetOverlay(
+            widgetSettings = settings.widgets,
+            currentLocation = currentLocation,
+            currentAddress = currentAddress,
+            speedKmh = speedKmh,
+            isEditMode = widgetEditMode,
+            onUpdateWidgets = onUpdateWidgets,
+        )
+
+        // Widget edit mode buttons (reset/done)
+        if (widgetEditMode) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 24.dp),
+            ) {
+                androidx.compose.material3.Button(
+                    onClick = {
+                        onUpdateWidgets?.invoke(
+                            settings.widgets.copy(
+                                clockWidget = settings.widgets.clockWidget.copy(
+                                    x = com.reaream.app.data.model.ClockWidgetConfig().x,
+                                    y = com.reaream.app.data.model.ClockWidgetConfig().y,
+                                    fontSize = com.reaream.app.data.model.ClockWidgetConfig().fontSize,
+                                ),
+                                locationWidget = settings.widgets.locationWidget.copy(
+                                    x = com.reaream.app.data.model.LocationWidgetConfig().x,
+                                    y = com.reaream.app.data.model.LocationWidgetConfig().y,
+                                    fontSize = com.reaream.app.data.model.LocationWidgetConfig().fontSize,
+                                ),
+                                speedWidget = settings.widgets.speedWidget.copy(
+                                    x = com.reaream.app.data.model.SpeedWidgetConfig().x,
+                                    y = com.reaream.app.data.model.SpeedWidgetConfig().y,
+                                    fontSize = com.reaream.app.data.model.SpeedWidgetConfig().fontSize,
+                                ),
+                            )
+                        )
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF666666),
+                        contentColor = Color.White,
+                    ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("リセット", fontSize = 14.sp)
+                }
+                androidx.compose.material3.Button(
+                    onClick = { widgetEditMode = false },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFFFC107),
+                        contentColor = Color.Black,
+                    ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("完了", fontSize = 14.sp)
+                }
+            }
         }
 
         // Error message
@@ -128,12 +215,14 @@ private fun LandscapeOverlay(
     chatMessages: List<ChatMessage>,
     torchEnabled: Boolean,
     zoomRatio: Float,
+    hasWidgets: Boolean,
     onToggleStreaming: () -> Unit,
     onToggleMute: () -> Unit,
     onToggleTorch: () -> Unit,
     onSwitchCamera: () -> Unit,
     onOpenSettings: () -> Unit,
     onZoomChange: (Float) -> Unit,
+    onEditWidgets: () -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         if (settings.display.showStreamInfo && streamState.isStreaming) {
@@ -164,12 +253,14 @@ private fun LandscapeOverlay(
             torchEnabled = torchEnabled,
             isLandscape = true,
             zoomRatio = zoomRatio,
+            hasWidgets = hasWidgets,
             onToggleStreaming = onToggleStreaming,
             onToggleMute = onToggleMute,
             onToggleTorch = onToggleTorch,
             onSwitchCamera = onSwitchCamera,
             onOpenSettings = onOpenSettings,
             onZoomChange = onZoomChange,
+            onEditWidgets = onEditWidgets,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding(),
@@ -184,12 +275,14 @@ private fun PortraitOverlay(
     chatMessages: List<ChatMessage>,
     torchEnabled: Boolean,
     zoomRatio: Float,
+    hasWidgets: Boolean,
     onToggleStreaming: () -> Unit,
     onToggleMute: () -> Unit,
     onToggleTorch: () -> Unit,
     onSwitchCamera: () -> Unit,
     onOpenSettings: () -> Unit,
     onZoomChange: (Float) -> Unit,
+    onEditWidgets: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Box(
@@ -226,12 +319,14 @@ private fun PortraitOverlay(
             torchEnabled = torchEnabled,
             isLandscape = false,
             zoomRatio = zoomRatio,
+            hasWidgets = hasWidgets,
             onToggleStreaming = onToggleStreaming,
             onToggleMute = onToggleMute,
             onToggleTorch = onToggleTorch,
             onSwitchCamera = onSwitchCamera,
             onOpenSettings = onOpenSettings,
             onZoomChange = onZoomChange,
+            onEditWidgets = onEditWidgets,
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding(),

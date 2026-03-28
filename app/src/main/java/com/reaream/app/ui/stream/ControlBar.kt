@@ -28,12 +28,14 @@ fun ControlBar(
     torchEnabled: Boolean,
     isLandscape: Boolean,
     zoomRatio: Float = 1.0f,
+    hasWidgets: Boolean = false,
     onToggleStreaming: () -> Unit,
     onToggleMute: () -> Unit,
     onToggleTorch: () -> Unit,
     onSwitchCamera: () -> Unit,
     onOpenSettings: () -> Unit,
     onZoomChange: (Float) -> Unit = {},
+    onEditWidgets: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val streamButtonColor by animateColorAsState(
@@ -109,6 +111,13 @@ fun ControlBar(
                 label = "Settings",
                 onClick = onOpenSettings,
             )
+            if (hasWidgets) {
+                ControlButton(
+                    icon = Icons.Filled.Edit,
+                    label = "Widgets",
+                    onClick = onEditWidgets,
+                )
+            }
         }
     } else {
         // Horizontal layout (bottom)
@@ -154,6 +163,13 @@ fun ControlBar(
                     label = "Settings",
                     onClick = onOpenSettings,
                 )
+                if (hasWidgets) {
+                    ControlButton(
+                        icon = Icons.Filled.Edit,
+                        label = "Widgets",
+                        onClick = onEditWidgets,
+                    )
+                }
             }
         }
     }
