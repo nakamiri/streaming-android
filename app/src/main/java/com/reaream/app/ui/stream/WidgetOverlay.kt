@@ -1,8 +1,10 @@
 package com.reaream.app.ui.stream
 
+import android.Manifest
 import android.location.Location
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -13,6 +15,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -135,22 +139,32 @@ fun WidgetOverlay(
             }
         }
 
-        // Permission warning
+        // Permission warning with tap to request
         val needsLocation = widgetSettings.locationWidget.enabled || widgetSettings.speedWidget.enabled
         if (needsLocation && locationPermissionDenied && !isEditMode) {
-            Text(
-                text = "⚠ 位置情報の権限を許可してください",
-                color = Color(0xFFFFC107),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 120.dp)
-                    .background(Color(0xCC000000), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-            )
+            LocationPermissionBanner(modifier = Modifier.align(Alignment.BottomCenter))
         }
     }
+}
+
+@OptIn(ExperimentalPermissionsApi::class)
+@Composable
+private fun LocationPermissionBanner(modifier: Modifier = Modifier) {
+    val permissionsState = rememberMultiplePermissionsState(
+        listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+    )
+
+    Text(
+        text = "⚠ タップして位置情報の権限を許可",
+        color = Color(0xFFFFC107),
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = modifier
+            .padding(bottom = 120.dp)
+            .clickable { permissionsState.launchMultiplePermissionRequest() }
+            .background(Color(0xCC000000), RoundedCornerShape(6.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    )
 }
 
 @Composable
