@@ -12,6 +12,17 @@
   - OK: `adb logcat -d -s "TAG:*" | head -20`
 - パイプ `|` と `&&` は使用可
 
+### Git / PR フロー
+
+- **main への直接 push は禁止** — リポジトリルールにより PR 必須
+- 作業は必ずフィーチャーブランチ（`feature/xxx`）で行い、`gh pr create` で PR を作成する
+
+```bash
+git checkout -b feature/my-change
+git push -u origin feature/my-change
+gh pr create --title "..." --body "..."
+```
+
 ### ビルド・インストール
 
 ```bash
