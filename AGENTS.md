@@ -16,6 +16,9 @@
 
 - **main への直接 push は禁止** — リポジトリルールにより PR 必須
 - 作業は必ずフィーチャーブランチ（`feature/xxx`）で行い、`gh pr create` で PR を作成する
+- PR タイトルは英語、PR 本文は日本語で書く
+- PR 本文の形式は直近の `#21` 以前の PR に合わせ、`## Summary` と `## Test plan` を使う
+- `git worktree` や Claude Code / OpenCode などの別 worktree で作業する場合、元 repo の `local.properties` は自動で来ないことがある。YouTube OAuth を使うビルドや確認の前に、元 repo からその worktree へ `local.properties` をコピーしておく
 
 ```bash
 git checkout -b feature/my-change
