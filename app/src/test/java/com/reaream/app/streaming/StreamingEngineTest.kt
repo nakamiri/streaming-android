@@ -153,4 +153,40 @@ class StreamingEngineTest {
         assertFalse(engine.state.value.isStreaming)
         engine.release()
     }
+
+    @Test
+    fun `thermal mitigation caps bitrate target`() {
+        assertEquals(
+            6300,
+            resolveRequestedVideoBitrateKbps(
+                configuredBitrateKbps = 9000,
+                adaptiveBitrateKbps = 0,
+                thermalMitigationEnabled = true,
+            )
+        )
+    }
+
+    @Test
+    fun `thermal mitigation respects lower adaptive bitrate`() {
+        assertEquals(
+            4000,
+            resolveRequestedVideoBitrateKbps(
+                configuredBitrateKbps = 9000,
+                adaptiveBitrateKbps = 4000,
+                thermalMitigationEnabled = true,
+            )
+        )
+    }
+
+    @Test
+    fun `normal mode uses configured bitrate when adaptive is disabled`() {
+        assertEquals(
+            9000,
+            resolveRequestedVideoBitrateKbps(
+                configuredBitrateKbps = 9000,
+                adaptiveBitrateKbps = 0,
+                thermalMitigationEnabled = false,
+            )
+        )
+    }
 }

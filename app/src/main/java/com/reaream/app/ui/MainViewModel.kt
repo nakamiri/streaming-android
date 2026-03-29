@@ -328,6 +328,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _torchEnabled.value = !_torchEnabled.value
     }
 
+    fun toggleThermalMitigation() {
+        streamingEngine.toggleThermalMitigation()
+    }
+
     fun switchCamera() {
         viewModelScope.launch {
             settingsRepo.update {

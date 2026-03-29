@@ -67,6 +67,7 @@ class StreamingEngine {
     private var goodQualityStreak: Int = 0
     private var configuredBitrateKbps: Int = 0
     private var currentAdaptiveBitrateKbps: Int = 0
+    private var thermalMitigationEnabled: Boolean = false
 
     private val videoFramesSentThisSecond = AtomicInteger(0)
     private val videoFramesDroppedThisSecond = AtomicInteger(0)
@@ -84,6 +85,7 @@ class StreamingEngine {
         val videoHeight: Int = 0,
         val adaptiveBitrateKbps: Int = 0,
         val droppedFramesPerSec: Int = 0,
+        val thermalMitigationEnabled: Boolean = false,
     )
 
     enum class ConnectionQuality { UNKNOWN, GOOD, FAIR, POOR }
@@ -100,6 +102,7 @@ class StreamingEngine {
         currentConfig = config
         configuredBitrateKbps = config.videoBitrate
         currentAdaptiveBitrateKbps = 0
+        thermalMitigationEnabled = false
         poorQualityStreak = 0
         goodQualityStreak = 0
         totalBytesSent.set(0L)
@@ -108,6 +111,7 @@ class StreamingEngine {
         videoFramesDroppedThisSecond.set(0)
         glPipeline.framesRendered.set(0)
         glPipeline.framesDropped.set(0)
+        glPipeline.setDisplayPreviewFpsCapWhileEncoding(NORMAL_PREVIEW_FPS_WHILE_ENCODING)
         glPipeline.onFirstFrameReady = { rotationDegrees ->
             if (isSessionActive(session)) {
                 scope.launch { setupVideoEncoderForSurface(session, config, rotationDegrees) }
@@ -170,6 +174,23 @@ class StreamingEngine {
 
     fun clearError() {
         _state.value = _state.value.copy(error = null)
+    }
+
+    fun toggleThermalMitigation() {
+        setThermalMitigationEnabled(!thermalMitigationEnabled)
+    }
+
+    fun setThermalMitigationEnabled(enabled: Boolean) {
+        thermalMitigationEnabled = enabled
+        glPipeline.setDisplayPreviewFpsCapWhileEncoding(
+            if (enabled) THERMAL_PREVIEW_FPS_WHILE_ENCODING else NORMAL_PREVIEW_FPS_WHILE_ENCODING,
+        )
+        applyRequestedVideoBitrate(computeRequestedVideoBitrateKbps())
+        _state.value = _state.value.copy(
+            adaptiveBitrateKbps = currentAdaptiveBitrateKbps,
+            thermalMitigationEnabled = enabled,
+        )
+        Log.i(TAG, "Thermal mitigation ${if (enabled) "enabled" else "disabled"}")
     }
 
     fun stopStreaming() {
@@ -270,7 +291,7 @@ class StreamingEngine {
         }
 
         val videoFormat = MediaFormat.createVideoFormat(videoMime, encW, encH).apply {
-            setInteger(MediaFormat.KEY_BIT_RATE, config.videoBitrate * 1000)
+            setInteger(MediaFormat.KEY_BIT_RATE, computeRequestedVideoBitrateKbps() * 1000)
             setInteger(MediaFormat.KEY_FRAME_RATE, config.fps)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
             setInteger(
@@ -476,10 +497,12 @@ class StreamingEngine {
         goodQualityStreak = 0
         configuredBitrateKbps = 0
         currentAdaptiveBitrateKbps = 0
+        thermalMitigationEnabled = false
         videoFramesSentThisSecond.set(0)
         videoFramesDroppedThisSecond.set(0)
         glPipeline.framesRendered.set(0)
         glPipeline.framesDropped.set(0)
+        glPipeline.setDisplayPreviewFpsCapWhileEncoding(NORMAL_PREVIEW_FPS_WHILE_ENCODING)
     }
 
     private fun launchStatsUpdater(session: Int) {
@@ -532,6 +555,7 @@ class StreamingEngine {
                     droppedFramesPerSec = dropped,
                     uptime = elapsed,
                     connectionQuality = quality,
+                    thermalMitigationEnabled = thermalMitigationEnabled,
                 )
 
                 val config = currentConfig
@@ -561,8 +585,8 @@ class StreamingEngine {
                         }
                         val reduced = maxOf((current * 0.75f).toInt(), floor)
                         if (reduced < current) {
-                            applyAdaptiveBitrate(reduced)
                             currentAdaptiveBitrateKbps = reduced
+                            applyRequestedVideoBitrate(computeRequestedVideoBitrateKbps())
                             _state.value = _state.value.copy(adaptiveBitrateKbps = reduced)
                         }
                     }
@@ -579,7 +603,12 @@ class StreamingEngine {
                         } else {
                             restored
                         }
-                        applyAdaptiveBitrate(target)
+                        applyRequestedVideoBitrate(
+                            resolveRequestedVideoBitrateKbps(
+                                configuredBitrateKbps = target,
+                                thermalMitigationEnabled = thermalMitigationEnabled,
+                            )
+                        )
                         _state.value = _state.value.copy(
                             adaptiveBitrateKbps = currentAdaptiveBitrateKbps,
                         )
@@ -589,14 +618,23 @@ class StreamingEngine {
         }
     }
 
-    private fun applyAdaptiveBitrate(targetKbps: Int) {
+    private fun computeRequestedVideoBitrateKbps(): Int {
+        return resolveRequestedVideoBitrateKbps(
+            configuredBitrateKbps = configuredBitrateKbps,
+            adaptiveBitrateKbps = currentAdaptiveBitrateKbps,
+            thermalMitigationEnabled = thermalMitigationEnabled,
+        )
+    }
+
+    private fun applyRequestedVideoBitrate(targetKbps: Int) {
+        if (targetKbps <= 0) return
         try {
             videoEncoder?.setParameters(Bundle().apply {
                 putInt(MediaFormat.KEY_BIT_RATE, targetKbps * 1000)
             })
-            Log.i(TAG, "Adaptive: set bitrate to ${targetKbps}kbps")
+            Log.i(TAG, "Video bitrate target set to ${targetKbps}kbps")
         } catch (e: Exception) {
-            Log.w(TAG, "Adaptive bitrate update failed", e)
+            Log.w(TAG, "Video bitrate update failed", e)
         }
     }
 
@@ -633,5 +671,28 @@ class StreamingEngine {
 
     companion object {
         private const val TAG = "StreamingEngine"
+        private const val NORMAL_PREVIEW_FPS_WHILE_ENCODING = 30
+        private const val THERMAL_PREVIEW_FPS_WHILE_ENCODING = 15
     }
+}
+
+internal fun resolveRequestedVideoBitrateKbps(
+    configuredBitrateKbps: Int,
+    adaptiveBitrateKbps: Int = 0,
+    thermalMitigationEnabled: Boolean,
+): Int {
+    if (configuredBitrateKbps <= 0) return 0
+
+    var target = if (adaptiveBitrateKbps > 0) {
+        adaptiveBitrateKbps.coerceAtMost(configuredBitrateKbps)
+    } else {
+        configuredBitrateKbps
+    }
+
+    if (thermalMitigationEnabled) {
+        val thermalCap = maxOf((configuredBitrateKbps * 0.7f).toInt(), 2_500)
+        target = minOf(target, thermalCap)
+    }
+
+    return target
 }

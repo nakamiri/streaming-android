@@ -50,6 +50,7 @@ fun ReareamApp(
                 onToggleTorch = viewModel::toggleTorch,
                 onSwitchCamera = viewModel::switchCamera,
                 onOpenSettings = { viewModel.navigate(Screen.Settings) },
+                onToggleThermalMitigation = viewModel::toggleThermalMitigation,
                 onClearError = { viewModel.streamingEngine.clearError() },
                 engine = viewModel.streamingEngine,
                 currentLocation = currentLocation,

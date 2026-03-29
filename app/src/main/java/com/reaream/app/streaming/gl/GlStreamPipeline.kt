@@ -66,6 +66,7 @@ class GlStreamPipeline(
     @Volatile private var dispW: Int = 0
     @Volatile private var dispH: Int = 0
     @Volatile private var lastDisplayRenderTimestampNs: Long = Long.MIN_VALUE
+    @Volatile private var displayFrameIntervalWhileEncodingNs: Long = DEFAULT_DISPLAY_FRAME_INTERVAL_WHILE_ENCODING_NS
 
     // Camera transform state
     @Volatile var cameraRotation: Int = 0
@@ -139,6 +140,15 @@ class GlStreamPipeline(
         if (cameraRotation == 0) {
             cameraRotation = rotationDegrees
         }
+    }
+
+    fun setDisplayPreviewFpsCapWhileEncoding(fps: Int) {
+        displayFrameIntervalWhileEncodingNs = if (fps <= 0) {
+            0L
+        } else {
+            NANOS_PER_SECOND / fps.toLong()
+        }
+        lastDisplayRenderTimestampNs = Long.MIN_VALUE
     }
 
     /**
@@ -389,6 +399,7 @@ class GlStreamPipeline(
             frameTimestampNs = frameTimestampNs,
             hasEncoder = hasEncoder,
             lastDisplayRenderTimestampNs = lastDisplayRenderTimestampNs,
+            displayFrameIntervalNs = displayFrameIntervalWhileEncodingNs,
         )
 
         if (shouldRenderDisplay) {
@@ -565,7 +576,7 @@ class GlStreamPipeline(
         private const val TAG = "GlStreamPipeline"
         private const val DISPLAY_FPS_WHILE_ENCODING = 30
         private const val NANOS_PER_SECOND = 1_000_000_000L
-        internal const val DISPLAY_FRAME_INTERVAL_WHILE_ENCODING_NS =
+        internal const val DEFAULT_DISPLAY_FRAME_INTERVAL_WHILE_ENCODING_NS =
             NANOS_PER_SECOND / DISPLAY_FPS_WHILE_ENCODING
 
         private val QUAD_POSITIONS = floatArrayOf(
@@ -629,9 +640,11 @@ internal fun shouldRenderDisplayFrame(
     frameTimestampNs: Long,
     hasEncoder: Boolean,
     lastDisplayRenderTimestampNs: Long,
+    displayFrameIntervalNs: Long,
 ): Boolean {
     if (!hasEncoder) return true
+    if (displayFrameIntervalNs <= 0L) return true
     if (lastDisplayRenderTimestampNs == Long.MIN_VALUE) return true
     return frameTimestampNs - lastDisplayRenderTimestampNs >=
-        GlStreamPipeline.DISPLAY_FRAME_INTERVAL_WHILE_ENCODING_NS
+        displayFrameIntervalNs
 }

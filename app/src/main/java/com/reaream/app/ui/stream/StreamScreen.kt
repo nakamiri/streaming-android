@@ -59,6 +59,7 @@ fun StreamScreen(
     onToggleTorch: () -> Unit,
     onSwitchCamera: () -> Unit,
     onOpenSettings: () -> Unit,
+    onToggleThermalMitigation: () -> Unit,
     engine: StreamingEngine,
     modifier: Modifier = Modifier,
     onClearError: () -> Unit = {},
@@ -211,6 +212,7 @@ fun StreamScreen(
                     onToggleTorch = onToggleTorch,
                     onSwitchCamera = onSwitchCamera,
                     onOpenSettings = onOpenSettings,
+                    onToggleThermalMitigation = onToggleThermalMitigation,
                     onZoomChange = { zoomRatio = it },
                     onEditWidgets = ::toggleWidgetsPanel,
                 )
@@ -230,6 +232,7 @@ fun StreamScreen(
                     onToggleTorch = onToggleTorch,
                     onSwitchCamera = onSwitchCamera,
                     onOpenSettings = onOpenSettings,
+                    onToggleThermalMitigation = onToggleThermalMitigation,
                     onZoomChange = { zoomRatio = it },
                     onEditWidgets = ::toggleWidgetsPanel,
                 )
@@ -522,6 +525,7 @@ private fun LandscapeOverlay(
     onToggleTorch: () -> Unit,
     onSwitchCamera: () -> Unit,
     onOpenSettings: () -> Unit,
+    onToggleThermalMitigation: () -> Unit,
     onZoomChange: (Float) -> Unit,
     onEditWidgets: () -> Unit,
 ) {
@@ -531,6 +535,7 @@ private fun LandscapeOverlay(
                 streamState = streamState,
                 settings = settings,
                 youtubeLiveUrl = youtubeLiveUrl,
+                onToggleThermalMitigation = onToggleThermalMitigation,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .statusBarsPadding(),
@@ -588,6 +593,7 @@ private fun PortraitOverlay(
     onToggleTorch: () -> Unit,
     onSwitchCamera: () -> Unit,
     onOpenSettings: () -> Unit,
+    onToggleThermalMitigation: () -> Unit,
     onZoomChange: (Float) -> Unit,
     onEditWidgets: () -> Unit,
 ) {
@@ -602,6 +608,7 @@ private fun PortraitOverlay(
                     streamState = streamState,
                     settings = settings,
                     youtubeLiveUrl = youtubeLiveUrl,
+                    onToggleThermalMitigation = onToggleThermalMitigation,
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .statusBarsPadding(),
