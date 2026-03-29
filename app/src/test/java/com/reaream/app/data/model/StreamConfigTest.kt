@@ -130,4 +130,27 @@ class StreamConfigTest {
     fun `auth type enum values`() {
         assertEquals(2, AuthType.entries.size)
     }
+
+    @Test
+    fun `startValidationError rejects blank url`() {
+        val config = StreamConfig(url = "")
+        assertNotNull(config.startValidationError())
+    }
+
+    @Test
+    fun `startValidationError rejects rist`() {
+        val config = StreamConfig(url = "rist://example", protocol = StreamProtocol.RIST)
+        assertTrue(config.startValidationError()!!.contains("RIST"))
+    }
+
+    @Test
+    fun `startValidationError rejects h265 over rtmp`() {
+        val config = StreamConfig(
+            url = "rtmp://example/live",
+            protocol = StreamProtocol.RTMP,
+            videoCodec = VideoCodec.H265,
+        )
+
+        assertTrue(config.startValidationError()!!.contains("H.264"))
+    }
 }

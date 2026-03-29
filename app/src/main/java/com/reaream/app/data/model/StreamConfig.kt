@@ -65,3 +65,13 @@ enum class VideoCodec(val displayName: String) {
     H264("H.264"),
     H265("H.265 (HEVC)"),
 }
+
+fun StreamProtocol.usesRtmpTransport(): Boolean = this == StreamProtocol.RTMP || this == StreamProtocol.RTMPS
+
+fun StreamConfig.startValidationError(): String? = when {
+    url.isBlank() -> "配信URLが設定されていません。設定画面でURLを入力してください。"
+    protocol == StreamProtocol.RIST -> "RIST 配信はまだ実装されていません。"
+    protocol.usesRtmpTransport() && videoCodec != VideoCodec.H264 ->
+        "RTMP/RTMPS 配信は現在 H.264 のみサポートしています。"
+    else -> null
+}

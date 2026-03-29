@@ -28,6 +28,7 @@ fun ReareamApp(
     val youtubeLiveUrl by viewModel.youtubeLiveUrl.collectAsStateWithLifecycle()
     val broadcastPicker by viewModel.broadcastPicker.collectAsStateWithLifecycle()
     val stopConfirmVisible by viewModel.stopConfirmVisible.collectAsStateWithLifecycle()
+    val screenBlackoutEnabled by viewModel.screenBlackoutEnabled.collectAsStateWithLifecycle()
 
     // Handle system back: go to previous screen instead of exiting app
     BackHandler(enabled = currentScreen !is Screen.Stream) {
@@ -50,14 +51,18 @@ fun ReareamApp(
                 onToggleTorch = viewModel::toggleTorch,
                 onSwitchCamera = viewModel::switchCamera,
                 onOpenSettings = { viewModel.navigate(Screen.Settings) },
+                onToggleThermalMitigation = viewModel::toggleThermalMitigation,
+                onToggleScreenBlackout = viewModel::toggleScreenBlackout,
                 onClearError = { viewModel.streamingEngine.clearError() },
                 engine = viewModel.streamingEngine,
+                screenBlackoutEnabled = screenBlackoutEnabled,
                 currentLocation = currentLocation,
                 currentAddress = currentAddress,
                 speedKmh = speedKmh,
                 locationPermissionDenied = locationPermissionDenied,
                 mapBitmap = mapBitmap,
                 onUpdateWidgets = viewModel::updateWidgetSettings,
+                onPreviewWidgets = viewModel::previewWidgetSettings,
                 onRecheckPermission = { viewModel.locationProvider.recheckPermission() },
                 onSetDensity = { viewModel.streamingEngine.widgetRenderer.screenDensity = it },
                 youtubeSetupError = youtubeSetupError,

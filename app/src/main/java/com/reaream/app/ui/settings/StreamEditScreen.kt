@@ -137,7 +137,12 @@ fun StreamEditScreen(
                 StreamProtocol.entries.forEachIndexed { index, proto ->
                     SegmentedButton(
                         selected = protocol == proto,
-                        onClick = { protocol = proto },
+                        onClick = {
+                            protocol = proto
+                            if (proto.usesRtmpTransport() && videoCodec != VideoCodec.H264) {
+                                videoCodec = VideoCodec.H264
+                            }
+                        },
                         shape = SegmentedButtonDefaults.itemShape(
                             index = index,
                             count = StreamProtocol.entries.size,
@@ -283,7 +288,7 @@ fun StreamEditScreen(
             // Adaptive quality
             ListItem(
                 headlineContent = { Text("アダプティブ品質") },
-                supportingContent = { Text("品質低下時にFPSを維持しながら解像度を自動で下げる") },
+                supportingContent = { Text("品質低下時にビットレートを自動で下げて切断や大きなコマ落ちを抑える") },
                 trailingContent = {
                     Switch(
                         checked = adaptiveBitrate,
@@ -296,9 +301,11 @@ fun StreamEditScreen(
             Text("Video Codec", style = MaterialTheme.typography.labelLarge)
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 VideoCodec.entries.forEachIndexed { index, codec ->
+                    val supported = !(protocol.usesRtmpTransport() && codec == VideoCodec.H265)
                     SegmentedButton(
                         selected = videoCodec == codec,
-                        onClick = { videoCodec = codec },
+                        onClick = { if (supported) videoCodec = codec },
+                        enabled = supported,
                         shape = SegmentedButtonDefaults.itemShape(
                             index = index,
                             count = VideoCodec.entries.size,
@@ -306,6 +313,23 @@ fun StreamEditScreen(
                     ) {
                         Text(codec.displayName)
                     }
+                }
+            }
+
+            when {
+                protocol == StreamProtocol.RIST -> {
+                    Text(
+                        text = "RIST はまだ実装されていません。保存はできますが、開始時にエラーになります。",
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 12.sp,
+                    )
+                }
+                protocol.usesRtmpTransport() -> {
+                    Text(
+                        text = "RTMP/RTMPS は現在 H.264 のみサポートしています。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                    )
                 }
             }
 

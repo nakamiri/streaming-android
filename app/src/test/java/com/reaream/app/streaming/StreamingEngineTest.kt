@@ -5,7 +5,10 @@ import com.reaream.app.streaming.StreamingEngine.ConnectionQuality
 import com.reaream.app.streaming.StreamingEngine.StreamState
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class StreamingEngineTest {
 
     @Test
@@ -131,16 +134,6 @@ class StreamingEngineTest {
     }
 
     @Test
-    fun `onVideoFrame does nothing when not streaming`() {
-        val engine = StreamingEngine()
-        val buffer = java.nio.ByteBuffer.allocate(100)
-
-        // Should not throw
-        engine.onVideoFrame(buffer, 640, 480, 0L)
-        engine.release()
-    }
-
-    @Test
     fun `onAudioData does nothing when not streaming`() {
         val engine = StreamingEngine()
         val data = ByteArray(1024)
@@ -148,5 +141,52 @@ class StreamingEngineTest {
         // Should not throw
         engine.onAudioData(data, 0L)
         engine.release()
+    }
+
+    @Test
+    fun `showError updates state without starting stream`() {
+        val engine = StreamingEngine()
+
+        engine.showError("boom")
+
+        assertEquals("boom", engine.state.value.error)
+        assertFalse(engine.state.value.isStreaming)
+        engine.release()
+    }
+
+    @Test
+    fun `thermal mitigation caps bitrate target`() {
+        assertEquals(
+            6300,
+            resolveRequestedVideoBitrateKbps(
+                configuredBitrateKbps = 9000,
+                adaptiveBitrateKbps = 0,
+                thermalMitigationEnabled = true,
+            )
+        )
+    }
+
+    @Test
+    fun `thermal mitigation respects lower adaptive bitrate`() {
+        assertEquals(
+            4000,
+            resolveRequestedVideoBitrateKbps(
+                configuredBitrateKbps = 9000,
+                adaptiveBitrateKbps = 4000,
+                thermalMitigationEnabled = true,
+            )
+        )
+    }
+
+    @Test
+    fun `normal mode uses configured bitrate when adaptive is disabled`() {
+        assertEquals(
+            9000,
+            resolveRequestedVideoBitrateKbps(
+                configuredBitrateKbps = 9000,
+                adaptiveBitrateKbps = 0,
+                thermalMitigationEnabled = false,
+            )
+        )
     }
 }

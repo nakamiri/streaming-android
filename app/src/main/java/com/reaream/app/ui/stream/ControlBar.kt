@@ -29,6 +29,7 @@ fun ControlBar(
     isMuted: Boolean,
     torchEnabled: Boolean,
     isLandscape: Boolean,
+    modifier: Modifier = Modifier,
     zoomRatio: Float = 1.0f,
     minZoomRatio: Float = 1.0f,
     maxZoomRatio: Float = 10.0f,
@@ -40,7 +41,6 @@ fun ControlBar(
     onOpenSettings: () -> Unit,
     onZoomChange: (Float) -> Unit = {},
     onEditWidgets: () -> Unit = {},
-    modifier: Modifier = Modifier,
 ) {
     val streamButtonColor by animateColorAsState(
         targetValue = when {

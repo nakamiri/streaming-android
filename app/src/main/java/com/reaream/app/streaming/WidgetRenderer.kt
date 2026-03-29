@@ -1,6 +1,13 @@
 package com.reaream.app.streaming
 
-import android.graphics.*
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.Rect
+import android.graphics.RectF
+import android.graphics.Typeface
 import android.location.Location
 import com.reaream.app.data.model.ClockWidgetConfig
 import com.reaream.app.data.model.LocationWidgetConfig
@@ -9,12 +16,14 @@ import com.reaream.app.data.model.SpeedUnit
 import com.reaream.app.data.model.SpeedWidgetConfig
 import com.reaream.app.data.model.WidgetSettings
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Renders widget overlays onto YUV video frames using Android Canvas.
- * Runs on the ImageAnalysis executor thread.
+ * Renders widget overlays onto frames.
+ * Canvas rendering happens on the GL thread when streaming is active.
  */
 class WidgetRenderer {
 
@@ -31,6 +40,17 @@ class WidgetRenderer {
     // Accumulated bounding rect of widgets drawn this frame — passed to YuvCompositor
     // to limit blending to only the regions that actually have pixels.
     private val dirtyRect = Rect()
+    private val textBounds = Rect()
+    private val mapClipPath = Path()
+
+    private var cachedClockPattern: String? = null
+    private var cachedClockFormatter: SimpleDateFormat? = null
+    private var lastOverlayKey: OverlayKey? = null
+    private var lastOverlayVisible = false
+    private val overlayVersionCounter = AtomicInteger(0)
+
+    val overlayVersion: Int
+        get() = overlayVersionCounter.get()
 
     private val textPaint by lazy {
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -47,6 +67,14 @@ class WidgetRenderer {
         }
     }
 
+    private val borderPaint by lazy {
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = 4f
+        }
+    }
+
     private val textPadding = 12f
 
     fun renderOntoFrame(
@@ -55,126 +83,174 @@ class WidgetRenderer {
         height: Int,
         settings: WidgetSettings,
     ) {
-        if (!settings.clockWidget.enabled && !settings.locationWidget.enabled
-            && !settings.speedWidget.enabled && !settings.mapWidget.enabled) return
-
-        val bitmap = ensureBitmap(width, height)
-        val canvas = overlayCanvas ?: return
-
-        bitmap.eraseColor(Color.TRANSPARENT)
-        dirtyRect.setEmpty()
-
-        if (settings.mapWidget.enabled) {
-            drawMap(canvas, width, height, settings.mapWidget)
-        }
-
-        if (settings.clockWidget.enabled) {
-            drawClock(canvas, width, height, settings.clockWidget)
-        }
-
-        if (settings.locationWidget.enabled) {
-            drawLocation(canvas, width, height, settings.locationWidget)
-        }
-
-        if (settings.speedWidget.enabled) {
-            drawSpeed(canvas, width, height, settings.speedWidget)
-        }
-
-        if (!dirtyRect.isEmpty) {
-            YuvCompositor.blendOntoI420(bitmap, yuvData, width, height, dirtyRect)
-        }
+        val overlay = renderOverlayBitmap(width, height, settings) ?: return
+        YuvCompositor.blendOntoI420(overlay, yuvData, width, height, dirtyRect)
     }
 
     /**
      * Renders widget overlays onto a Bitmap and returns it.
      * Returns null if no widgets are enabled or none were drawn.
-     * Called from the GL thread — no YUV compositing.
      */
     fun renderOverlayBitmap(width: Int, height: Int, settings: WidgetSettings): Bitmap? {
-        if (!settings.clockWidget.enabled && !settings.locationWidget.enabled
-            && !settings.speedWidget.enabled && !settings.mapWidget.enabled) return null
+        if (!hasAnyEnabledWidget(settings)) {
+            if (lastOverlayVisible || lastOverlayKey != null) {
+                overlayVersionCounter.incrementAndGet()
+            }
+            lastOverlayKey = null
+            lastOverlayVisible = false
+            return null
+        }
 
+        val overlayData = buildOverlayData(width, height, settings)
         val bitmap = ensureBitmap(width, height)
-        val canvas = overlayCanvas ?: return null
+        if (overlayData.key == lastOverlayKey) {
+            return if (lastOverlayVisible) bitmap else null
+        }
 
+        lastOverlayKey = overlayData.key
         bitmap.eraseColor(Color.TRANSPARENT)
         dirtyRect.setEmpty()
 
-        if (settings.mapWidget.enabled) drawMap(canvas, width, height, settings.mapWidget)
-        if (settings.clockWidget.enabled) drawClock(canvas, width, height, settings.clockWidget)
-        if (settings.locationWidget.enabled) drawLocation(canvas, width, height, settings.locationWidget)
-        if (settings.speedWidget.enabled) drawSpeed(canvas, width, height, settings.speedWidget)
+        overlayData.mapBitmap?.let { mapBmp ->
+            drawMap(overlayCanvas ?: return null, width, height, settings.mapWidget, mapBmp)
+        }
+        overlayData.clockText?.let { text ->
+            drawTextWidget(overlayCanvas ?: return null, width, height, text, settings.clockWidget.x, settings.clockWidget.y, settings.clockWidget.fontSize)
+        }
+        overlayData.locationText?.let { text ->
+            drawTextWidget(overlayCanvas ?: return null, width, height, text, settings.locationWidget.x, settings.locationWidget.y, settings.locationWidget.fontSize)
+        }
+        overlayData.speedText?.let { text ->
+            drawTextWidget(overlayCanvas ?: return null, width, height, text, settings.speedWidget.x, settings.speedWidget.y, settings.speedWidget.fontSize)
+        }
 
-        return if (!dirtyRect.isEmpty) bitmap else null
+        lastOverlayVisible = !dirtyRect.isEmpty
+        overlayVersionCounter.incrementAndGet()
+        return if (lastOverlayVisible) bitmap else null
     }
 
-    private fun drawClock(canvas: Canvas, w: Int, h: Int, config: ClockWidgetConfig) {
-        val format = SimpleDateFormat(config.format.pattern, Locale.getDefault())
-        val timeText = format.format(Date())
-        drawTextWidget(canvas, w, h, timeText, config.x, config.y, config.fontSize)
+    private fun hasAnyEnabledWidget(settings: WidgetSettings): Boolean {
+        return settings.clockWidget.enabled || settings.locationWidget.enabled ||
+            settings.speedWidget.enabled || settings.mapWidget.enabled
     }
 
-    private fun drawLocation(canvas: Canvas, w: Int, h: Int, config: LocationWidgetConfig) {
+    private fun buildOverlayData(width: Int, height: Int, settings: WidgetSettings): OverlayData {
+        val clockText = if (settings.clockWidget.enabled) {
+            formatClockText(settings.clockWidget)
+        } else {
+            null
+        }
+        val locationText = if (settings.locationWidget.enabled) {
+            buildLocationText()
+        } else {
+            null
+        }
+        val speedText = if (settings.speedWidget.enabled) {
+            buildSpeedText(settings.speedWidget)
+        } else {
+            null
+        }
+        val mapBitmap = if (settings.mapWidget.enabled) {
+            currentMapBitmap.get()?.takeUnless { it.isRecycled }
+        } else {
+            null
+        }
+
+        return OverlayData(
+            clockText = clockText,
+            locationText = locationText,
+            speedText = speedText,
+            mapBitmap = mapBitmap,
+            key = OverlayKey(
+                width = width,
+                height = height,
+                densityBits = screenDensity.toRawBits(),
+                settingsHash = settings.hashCode(),
+                clockText = clockText,
+                locationText = locationText,
+                speedText = speedText,
+                mapIdentity = System.identityHashCode(mapBitmap),
+                mapGeneration = mapBitmap?.generationId ?: -1,
+            ),
+        )
+    }
+
+    private fun formatClockText(config: ClockWidgetConfig): String {
+        val pattern = config.format.pattern
+        val formatter = if (cachedClockPattern == pattern) {
+            cachedClockFormatter
+        } else {
+            SimpleDateFormat(pattern, Locale.getDefault()).also {
+                cachedClockPattern = pattern
+                cachedClockFormatter = it
+            }
+        } ?: SimpleDateFormat(pattern, Locale.getDefault()).also {
+            cachedClockPattern = pattern
+            cachedClockFormatter = it
+        }
+        return formatter.format(Date())
+    }
+
+    private fun buildLocationText(): String? {
         val address = currentAddress.get()
         val location = currentLocation.get()
-
-        val text = when {
+        return when {
             address != null -> address
-            location != null -> String.format(
-                Locale.US, "%.4f, %.4f", location.latitude, location.longitude
-            )
-            else -> return
+            location != null -> String.format(Locale.US, "%.4f, %.4f", location.latitude, location.longitude)
+            else -> null
         }
-
-        drawTextWidget(canvas, w, h, text, config.x, config.y, config.fontSize)
     }
 
-    private fun drawSpeed(canvas: Canvas, w: Int, h: Int, config: SpeedWidgetConfig) {
+    private fun buildSpeedText(config: SpeedWidgetConfig): String {
         val kmh = currentSpeedKmh.get()
         val value = if (config.unit == SpeedUnit.MPH) kmh * 0.621371f else kmh
-        val text = String.format(Locale.US, "%.0f %s", value, config.unit.label)
-        drawTextWidget(canvas, w, h, text, config.x, config.y, config.fontSize)
+        return String.format(Locale.US, "%.0f %s", value, config.unit.label)
     }
 
-    private fun drawMap(canvas: Canvas, w: Int, h: Int, config: MapWidgetConfig) {
-        val mapBmp = currentMapBitmap.get() ?: return
-        val mapSize = (config.sizeDp * screenDensity).toInt().coerceIn(50, minOf(w, h))
+    private fun drawMap(
+        canvas: Canvas,
+        width: Int,
+        height: Int,
+        config: MapWidgetConfig,
+        mapBitmap: Bitmap,
+    ) {
+        val mapSize = (config.sizeDp * screenDensity).toInt().coerceIn(50, minOf(width, height))
 
-        val x = (config.x * w).coerceIn(0f, (w - mapSize).coerceAtLeast(0).toFloat())
-        val y = (config.y * h).coerceIn(0f, (h - mapSize).coerceAtLeast(0).toFloat())
-
+        val x = (config.x * width).coerceIn(0f, (width - mapSize).coerceAtLeast(0).toFloat())
+        val y = (config.y * height).coerceIn(0f, (height - mapSize).coerceAtLeast(0).toFloat())
         val dst = RectF(x, y, x + mapSize, y + mapSize)
 
-        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            style = Paint.Style.STROKE
-            strokeWidth = 4f
-        }
-
-        val path = android.graphics.Path()
-        path.addRoundRect(dst, 12f, 12f, android.graphics.Path.Direction.CW)
+        mapClipPath.reset()
+        mapClipPath.addRoundRect(dst, 12f, 12f, Path.Direction.CW)
         canvas.save()
-        canvas.clipPath(path)
-        canvas.drawBitmap(mapBmp, null, dst, null)
+        canvas.clipPath(mapClipPath)
+        canvas.drawBitmap(mapBitmap, null, dst, null)
         canvas.restore()
         canvas.drawRoundRect(dst, 12f, 12f, borderPaint)
 
         dirtyRect.union(dst.left.toInt(), dst.top.toInt(), dst.right.toInt() + 1, dst.bottom.toInt() + 1)
     }
 
-    private fun drawTextWidget(canvas: Canvas, w: Int, h: Int, text: String, xPct: Float, yPct: Float, fontSize: Int) {
+    private fun drawTextWidget(
+        canvas: Canvas,
+        width: Int,
+        height: Int,
+        text: String,
+        xPct: Float,
+        yPct: Float,
+        fontSize: Int,
+    ) {
         textPaint.textSize = fontSize * screenDensity
 
-        val bounds = Rect()
-        textPaint.getTextBounds(text, 0, text.length, bounds)
-        val textW = bounds.width().toFloat()
-        val textH = bounds.height().toFloat()
+        textPaint.getTextBounds(text, 0, text.length, textBounds)
+        val textW = textBounds.width().toFloat()
+        val textH = textBounds.height().toFloat()
 
         val bgW = textW + textPadding * 2
         val bgH = textH + textPadding * 2
 
-        val x = (xPct * w).coerceIn(0f, (w - bgW).coerceAtLeast(0f))
-        val y = (yPct * h).coerceIn(0f, (h - bgH).coerceAtLeast(0f))
+        val x = (xPct * width).coerceIn(0f, (width - bgW).coerceAtLeast(0f))
+        val y = (yPct * height).coerceIn(0f, (height - bgH).coerceAtLeast(0f))
 
         val bgRect = RectF(x, y, x + bgW, y + bgH)
         canvas.drawRoundRect(bgRect, 8f, 8f, bgPaint)
@@ -184,18 +260,45 @@ class WidgetRenderer {
     }
 
     private fun ensureBitmap(width: Int, height: Int): Bitmap {
-        val bmp = overlayBitmap
-        if (bmp != null && bmp.width == width && bmp.height == height) return bmp
+        val current = overlayBitmap
+        if (current != null && current.width == width && current.height == height) return current
 
-        val newBmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        overlayBitmap = newBmp
-        overlayCanvas = Canvas(newBmp)
-        return newBmp
+        overlayBitmap?.recycle()
+        val newBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        overlayBitmap = newBitmap
+        overlayCanvas = Canvas(newBitmap)
+        lastOverlayKey = null
+        lastOverlayVisible = false
+        overlayVersionCounter.incrementAndGet()
+        return newBitmap
     }
 
     fun release() {
         overlayBitmap?.recycle()
         overlayBitmap = null
         overlayCanvas = null
+        lastOverlayKey = null
+        lastOverlayVisible = false
+        overlayVersionCounter.incrementAndGet()
     }
+
+    private data class OverlayData(
+        val clockText: String?,
+        val locationText: String?,
+        val speedText: String?,
+        val mapBitmap: Bitmap?,
+        val key: OverlayKey,
+    )
+
+    private data class OverlayKey(
+        val width: Int,
+        val height: Int,
+        val densityBits: Int,
+        val settingsHash: Int,
+        val clockText: String?,
+        val locationText: String?,
+        val speedText: String?,
+        val mapIdentity: Int,
+        val mapGeneration: Int,
+    )
 }

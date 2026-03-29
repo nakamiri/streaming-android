@@ -19,12 +19,12 @@ class AudioCapture(
     @Volatile
     var isMuted: Boolean = false
 
-    fun start(context: android.content.Context) {
+    fun start(context: android.content.Context): Boolean {
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
             Log.e(TAG, "Audio permission not granted")
-            return
+            return false
         }
 
         // Stop any existing capture before starting a new one
@@ -37,15 +37,28 @@ class AudioCapture(
         val audioFormat = AudioFormat.ENCODING_PCM_16BIT
         val bufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat) * 2
 
-        audioRecord = AudioRecord(
+        val record = AudioRecord(
             MediaRecorder.AudioSource.MIC,
             sampleRate,
             channelConfig,
             audioFormat,
             bufferSize
         )
+        if (record.state != AudioRecord.STATE_INITIALIZED) {
+            Log.e(TAG, "AudioRecord initialization failed")
+            record.release()
+            return false
+        }
 
-        audioRecord?.startRecording()
+        audioRecord = record
+
+        try {
+            audioRecord?.startRecording()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start audio capture", e)
+            stop()
+            return false
+        }
 
         captureJob = scope.launch {
             val buffer = ByteArray(4096)
@@ -64,6 +77,7 @@ class AudioCapture(
         }
 
         Log.i(TAG, "Audio capture started")
+        return true
     }
 
     fun stop() {

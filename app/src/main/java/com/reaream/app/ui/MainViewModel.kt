@@ -36,6 +36,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // YouTube broadcast ID for the current session (to end broadcast on stop)
     private var currentYoutubeBroadcastId: String? = null
+    private var streamingResourcesActive = false
 
     private val _youtubeLiveUrl = MutableStateFlow<String?>(null)
     val youtubeLiveUrl: StateFlow<String?> = _youtubeLiveUrl.asStateFlow()
@@ -71,6 +72,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val settings: StateFlow<AppSettings> = settingsRepo.settings
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
+
+    val streamState: StateFlow<StreamingEngine.StreamState> = streamingEngine.state
+
+    private val _torchEnabled = MutableStateFlow(false)
+    val torchEnabled: StateFlow<Boolean> = _torchEnabled.asStateFlow()
+
+    private val _screenBlackoutEnabled = MutableStateFlow(false)
+    val screenBlackoutEnabled: StateFlow<Boolean> = _screenBlackoutEnabled.asStateFlow()
 
     init {
         // Sync widget settings and location data to streaming engine
@@ -116,12 +125,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 streamingEngine.widgetRenderer.currentAddress.set(addr)
             }
         }
+        viewModelScope.launch {
+            streamingEngine.state.collect { state ->
+                if (!state.isStreaming && !state.isConnecting && streamingResourcesActive) {
+                    stopStreamingResources()
+                }
+                if (!state.isStreaming && !state.isConnecting && _screenBlackoutEnabled.value) {
+                    _screenBlackoutEnabled.value = false
+                }
+            }
+        }
     }
-
-    val streamState: StateFlow<StreamingEngine.StreamState> = streamingEngine.state
-
-    private val _torchEnabled = MutableStateFlow(false)
-    val torchEnabled: StateFlow<Boolean> = _torchEnabled.asStateFlow()
 
     private val _screenStack = mutableListOf<Screen>(Screen.Stream)
     private val _currentScreen = MutableStateFlow<Screen>(Screen.Stream)
@@ -243,17 +257,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _youtubeLiveUrl.value = null
         }
 
-        val context = getApplication<Application>()
-
-        // Start foreground service
-        val intent = Intent(context, StreamingService::class.java).apply {
-            action = StreamingService.ACTION_START
+        config.startValidationError()?.let { error ->
+            streamingEngine.showError(error)
+            return
         }
-        context.startForegroundService(intent)
+
+        val context = getApplication<Application>()
 
         // Start audio capture
         audioCapture.isMuted = settings.value.audio.muted
-        audioCapture.start(context)
+        if (!audioCapture.start(context)) {
+            streamingEngine.showError("マイク権限または初期化に失敗したため、配信を開始できません。")
+            return
+        }
+
+        startStreamingService(context)
+        streamingResourcesActive = true
 
         // Connect chat
         val chatSettings = settings.value.chat
@@ -269,8 +288,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val context = getApplication<Application>()
 
         streamingEngine.stopStreaming()
-        audioCapture.stop()
-        chatManager.disconnect()
+        stopStreamingResources(context)
 
         val broadcastId = currentYoutubeBroadcastId
         if (broadcastId != null) {
@@ -283,6 +301,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             // If not ending, keep broadcastId so user can reconnect via the picker
         }
+
+    }
+
+    private fun startStreamingService(context: Application) {
+        val intent = Intent(context, StreamingService::class.java).apply {
+            action = StreamingService.ACTION_START
+        }
+        context.startForegroundService(intent)
+    }
+
+    private fun stopStreamingResources(context: Application = getApplication()) {
+        if (!streamingResourcesActive) return
+        streamingResourcesActive = false
+        audioCapture.stop()
+        chatManager.disconnect()
 
         val intent = Intent(context, StreamingService::class.java).apply {
             action = StreamingService.ACTION_STOP
@@ -299,6 +332,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleTorch() {
         _torchEnabled.value = !_torchEnabled.value
+    }
+
+    fun toggleThermalMitigation() {
+        streamingEngine.toggleThermalMitigation()
+    }
+
+    fun toggleScreenBlackout() {
+        _screenBlackoutEnabled.value = !_screenBlackoutEnabled.value
     }
 
     fun switchCamera() {
@@ -407,8 +448,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun previewWidgetSettings(widgets: WidgetSettings) {
+        streamingEngine.widgetSettingsRef.set(widgets)
+        val loc = locationProvider.location.value
+        if (loc != null && widgets.mapWidget.enabled) {
+            mapTileProvider.updateLocation(loc, widgets.mapWidget.zoom, widgets.mapWidget.showMarker)
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
+        stopStreamingResources()
         streamingEngine.release()
         audioCapture.release()
         chatManager.release()
