@@ -105,6 +105,9 @@ fun StreamWizardScreen(
     // YouTube broadcast settings
     var broadcastTitle by remember { mutableStateOf("") }
     var privacy by remember { mutableStateOf(YouTubePrivacy.UNLISTED) }
+    var youtubeLatency by remember { mutableStateOf(YouTubeLatency.NORMAL) }
+    var youtubeAutoStart by remember { mutableStateOf(true) }
+    var youtubeAutoStop by remember { mutableStateOf(true) }
     var useExistingBroadcast by remember { mutableStateOf(false) }
     var existingBroadcasts by remember { mutableStateOf<List<YouTubeApiClient.BroadcastInfo>>(emptyList()) }
     var selectedBroadcastId by remember { mutableStateOf<String?>(null) }
@@ -230,6 +233,9 @@ fun StreamWizardScreen(
                                         youtubeChannelName = displayName,
                                         youtubeBroadcastTitle = if (useExistingBroadcast) "" else broadcastTitle,
                                         youtubePrivacy = privacy,
+                                        youtubeLatency = youtubeLatency,
+                                        youtubeAutoStart = youtubeAutoStart,
+                                        youtubeAutoStop = youtubeAutoStop,
                                     )
                                 )
                             } else {
@@ -343,6 +349,12 @@ fun StreamWizardScreen(
                             onBroadcastTitleChange = { broadcastTitle = it },
                             privacy = privacy,
                             onPrivacyChange = { privacy = it },
+                            latency = youtubeLatency,
+                            onLatencyChange = { youtubeLatency = it },
+                            autoStart = youtubeAutoStart,
+                            onAutoStartChange = { youtubeAutoStart = it },
+                            autoStop = youtubeAutoStop,
+                            onAutoStopChange = { youtubeAutoStop = it },
                             existingBroadcasts = existingBroadcasts,
                             selectedBroadcastId = selectedBroadcastId,
                             onSelectBroadcast = { selectedBroadcastId = it },
@@ -802,6 +814,12 @@ private fun BroadcastStep(
     onBroadcastTitleChange: (String) -> Unit,
     privacy: YouTubePrivacy,
     onPrivacyChange: (YouTubePrivacy) -> Unit,
+    latency: YouTubeLatency,
+    onLatencyChange: (YouTubeLatency) -> Unit,
+    autoStart: Boolean,
+    onAutoStartChange: (Boolean) -> Unit,
+    autoStop: Boolean,
+    onAutoStopChange: (Boolean) -> Unit,
     existingBroadcasts: List<YouTubeApiClient.BroadcastInfo>,
     selectedBroadcastId: String?,
     onSelectBroadcast: (String) -> Unit,
@@ -942,9 +960,58 @@ private fun BroadcastStep(
                     }
                 }
             }
+
+            HorizontalDivider()
+
+            Text("配信遅延", style = MaterialTheme.typography.labelLarge)
+            YouTubeLatency.entries.forEach { mode ->
+                val isSelected = latency == mode
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onLatencyChange(mode) },
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surfaceVariant,
+                    ),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        RadioButton(selected = isSelected, onClick = { onLatencyChange(mode) })
+                        Column {
+                            Text(mode.displayName, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                mode.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+
+            ListItem(
+                headlineContent = { Text("自動スタート") },
+                supportingContent = { Text("接続後に配信を自動で開始する") },
+                trailingContent = {
+                    Switch(checked = autoStart, onCheckedChange = onAutoStartChange)
+                },
+            )
+            ListItem(
+                headlineContent = { Text("自動ストップ") },
+                supportingContent = { Text("接続が切れたら配信を自動で終了する") },
+                trailingContent = {
+                    Switch(checked = autoStop, onCheckedChange = onAutoStopChange)
+                },
+            )
         }
     }
 }
+
 
 private suspend fun fetchChannelInfo(
     authManager: YouTubeAuthManager?,

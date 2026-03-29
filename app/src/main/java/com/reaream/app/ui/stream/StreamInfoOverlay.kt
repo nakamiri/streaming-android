@@ -66,11 +66,36 @@ fun StreamInfoOverlay(
         }
 
         if (settings.display.showFps && streamState.fps > 0) {
-            InfoText("${streamState.fps} fps")
+            val fpsColor = when {
+                streamState.droppedFramesPerSec > 5 -> Color(0xFFFF4444)
+                streamState.droppedFramesPerSec > 0 -> Color(0xFFFFC107)
+                else -> Color.White
+            }
+            Text(
+                text = buildString {
+                    append("${streamState.fps} fps")
+                    if (streamState.droppedFramesPerSec > 0) {
+                        append(" ▼${streamState.droppedFramesPerSec}drop")
+                    }
+                },
+                color = fpsColor,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+            )
         }
 
         if (streamState.videoWidth > 0) {
-            InfoText("${streamState.videoWidth}x${streamState.videoHeight}")
+            val resLabel = "${streamState.videoWidth}x${streamState.videoHeight}"
+            InfoText(resLabel)
+        }
+
+        if (streamState.adaptiveBitrateKbps > 0) {
+            Text(
+                text = "▼ ${streamState.adaptiveBitrateKbps}kbps",
+                color = Color(0xFFFFC107),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+            )
         }
 
         if (settings.display.showUptime) {

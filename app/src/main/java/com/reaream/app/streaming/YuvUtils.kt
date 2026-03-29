@@ -9,6 +9,21 @@ object YuvUtils {
 
     fun rotateI420(src: ByteArray, srcW: Int, srcH: Int, degrees: Int): RotatedFrame {
         if (degrees == 0) return RotatedFrame(src, srcW, srcH)
+        val dst = ByteArray(src.size)
+        val (dstW, dstH) = rotateI420Into(src, srcW, srcH, degrees, dst)
+        return RotatedFrame(dst, dstW, dstH)
+    }
+
+    /**
+     * Rotate into a pre-allocated [dst] buffer to avoid per-frame allocation.
+     * Returns the output dimensions (dstW, dstH). [dst] must be at least src.size bytes.
+     * If [degrees] is 0 returns (srcW, srcH) without copying.
+     */
+    fun rotateI420Into(src: ByteArray, srcW: Int, srcH: Int, degrees: Int, dst: ByteArray): Pair<Int, Int> {
+        if (degrees == 0) {
+            System.arraycopy(src, 0, dst, 0, src.size)
+            return srcW to srcH
+        }
 
         val ySize = srcW * srcH
         val uvW = srcW / 2
@@ -17,7 +32,6 @@ object YuvUtils {
 
         val dstW: Int
         val dstH: Int
-        val dst = ByteArray(src.size)
 
         when (degrees) {
             90 -> {
@@ -38,9 +52,9 @@ object YuvUtils {
                 rotatePlane270(src, ySize, dst, dstW * dstH, uvW, uvH)
                 rotatePlane270(src, ySize + uvPlaneSize, dst, dstW * dstH + (dstW / 2) * (dstH / 2), uvW, uvH)
             }
-            else -> return RotatedFrame(src, srcW, srcH)
+            else -> return srcW to srcH
         }
-        return RotatedFrame(dst, dstW, dstH)
+        return dstW to dstH
     }
 
     // 90° CW: src(x,y) → dst(h-1-y, x)
