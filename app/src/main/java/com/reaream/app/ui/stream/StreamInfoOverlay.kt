@@ -18,13 +18,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.reaream.app.data.model.AppSettings
 import com.reaream.app.streaming.StreamingEngine
+import java.util.Locale
 
 @Composable
 fun StreamInfoOverlay(
     streamState: StreamingEngine.StreamState,
     settings: AppSettings,
-    youtubeLiveUrl: String? = null,
     modifier: Modifier = Modifier,
+    youtubeLiveUrl: String? = null,
 ) {
     Column(
         modifier = modifier
@@ -102,7 +103,7 @@ fun StreamInfoOverlay(
             val hours = streamState.uptime / 3600
             val minutes = (streamState.uptime % 3600) / 60
             val seconds = streamState.uptime % 60
-            InfoText(String.format("%02d:%02d:%02d", hours, minutes, seconds))
+            InfoText(String.format(Locale.getDefault(), "%02d:%02d:%02d", hours, minutes, seconds))
         }
 
         if (youtubeLiveUrl != null) {

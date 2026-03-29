@@ -58,18 +58,18 @@ class SrtConnection(
         Log.i(TAG, "SRT disconnected")
     }
 
-    override fun sendVideo(data: ByteArray, timestampUs: Long, flags: Int) {
-        sendData(data, timestampUs)
+    override fun sendVideo(data: ByteArray, timestampUs: Long, flags: Int): Boolean {
+        return sendData(data, timestampUs)
     }
 
-    override fun sendAudio(data: ByteArray, timestampUs: Long, flags: Int) {
-        sendData(data, timestampUs)
+    override fun sendAudio(data: ByteArray, timestampUs: Long, flags: Int): Boolean {
+        return sendData(data, timestampUs)
     }
 
-    private fun sendData(data: ByteArray, timestampUs: Long) {
-        if (!isConnected) return
+    private fun sendData(data: ByteArray, timestampUs: Long): Boolean {
+        if (!isConnected) return false
         try {
-            val addr = address ?: return
+            val addr = address ?: return false
             // Fragment large packets into MTU-sized chunks
             val maxPayload = 1316 // SRT default payload size
             var offset = 0
@@ -79,9 +79,11 @@ class SrtConnection(
                 socket?.send(packet)
                 offset += chunkSize
             }
+            return true
         } catch (e: IOException) {
             Log.e(TAG, "Error sending SRT data", e)
             isConnected = false
+            return false
         }
     }
 

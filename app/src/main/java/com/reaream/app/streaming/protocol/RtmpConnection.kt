@@ -4,6 +4,7 @@ import android.media.MediaCodec
 import android.util.Log
 import com.pedro.common.ConnectChecker
 import com.pedro.rtmp.rtmp.RtmpClient
+import com.reaream.app.data.model.VideoCodec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -18,8 +19,8 @@ import kotlin.coroutines.resumeWithException
  */
 class RtmpConnection(
     private val url: String,
-    private val videoWidth: Int = 1920,
-    private val videoHeight: Int = 1080,
+    private var videoWidth: Int = 1920,
+    private var videoHeight: Int = 1080,
     private val sampleRate: Int = 44100,
 ) : StreamConnection {
 
@@ -101,8 +102,14 @@ class RtmpConnection(
         videoInfoSent = false
     }
 
-    override fun sendVideo(data: ByteArray, timestampUs: Long, flags: Int) {
-        if (!isConnected) return
+    override fun updateVideoParameters(width: Int, height: Int, codec: VideoCodec) {
+        videoWidth = width
+        videoHeight = height
+        rtmpClient?.setVideoResolution(width, height)
+    }
+
+    override fun sendVideo(data: ByteArray, timestampUs: Long, flags: Int): Boolean {
+        if (!isConnected) return false
         try {
             // Extract SPS/PPS from codec config and call setVideoInfo
             if (flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
@@ -113,34 +120,39 @@ class RtmpConnection(
                     videoInfoSent = true
                 } else {
                     Log.w(TAG, "Could not parse SPS/PPS from codec config")
+                    return false
                 }
-                return // Don't send codec config as a regular frame
+                return true // Don't send codec config as a regular frame
             }
 
-            if (!videoInfoSent) return // Can't send video without SPS/PPS
+            if (!videoInfoSent) return false // Can't send video without SPS/PPS
 
             val buffer = ByteBuffer.wrap(data)
             val info = MediaCodec.BufferInfo().apply {
                 set(0, data.size, timestampUs, flags)
             }
             rtmpClient?.sendVideo(buffer, info)
+            return true
         } catch (e: Exception) {
             Log.e(TAG, "Error sending video", e)
             isConnected = false
+            return false
         }
     }
 
-    override fun sendAudio(data: ByteArray, timestampUs: Long, flags: Int) {
-        if (!isConnected) return
+    override fun sendAudio(data: ByteArray, timestampUs: Long, flags: Int): Boolean {
+        if (!isConnected) return false
         try {
             val buffer = ByteBuffer.wrap(data)
             val info = MediaCodec.BufferInfo().apply {
                 set(0, data.size, timestampUs, flags)
             }
             rtmpClient?.sendAudio(buffer, info)
+            return true
         } catch (e: Exception) {
             Log.e(TAG, "Error sending audio", e)
             isConnected = false
+            return false
         }
     }
 

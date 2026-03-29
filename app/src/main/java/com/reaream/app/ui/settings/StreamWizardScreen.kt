@@ -73,7 +73,7 @@ private enum class QualityPreset(
 ) {
     LOW("Low", "720p / 2,500 kbps / 30fps", Resolution.HD_720, 2500, 30),
     STANDARD("Standard", "1080p / 4,500 kbps / 30fps", Resolution.HD_1080, 4500, 30),
-    HIGH("High", "1080p / 6,000 kbps / 60fps", Resolution.HD_1080, 6000, 60),
+    HIGH("High", "1080p / 9,000 kbps / 60fps", Resolution.HD_1080, 9000, 60),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

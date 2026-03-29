@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.reaream.app.data.model.CameraSettings
 import com.reaream.app.ui.Screen
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,7 +71,7 @@ fun CameraSettingsScreen(
                 headlineContent = { Text("Zoom Level") },
                 supportingContent = {
                     Column {
-                        Text("${String.format("%.1f", camera.zoomLevel)}x")
+                        Text("${String.format(Locale.getDefault(), "%.1f", camera.zoomLevel)}x")
                         Slider(
                             value = camera.zoomLevel,
                             onValueChange = { onUpdate(camera.copy(zoomLevel = it)) },

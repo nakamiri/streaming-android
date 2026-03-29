@@ -1,10 +1,23 @@
 package com.reaream.app.ui.stream
 
 import android.content.res.Configuration
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import android.util.Log
+import android.util.Range
+import android.util.Size
+import android.view.Surface
 import android.view.ViewGroup
+import androidx.annotation.OptIn
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
+import androidx.camera.core.AspectRatio
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -22,12 +35,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
 import com.reaream.app.data.model.AppSettings
+import com.reaream.app.data.model.Resolution
 import com.reaream.app.streaming.StreamingEngine
 import com.reaream.app.chat.ChatMessage
 
@@ -42,8 +57,9 @@ fun StreamScreen(
     onToggleTorch: () -> Unit,
     onSwitchCamera: () -> Unit,
     onOpenSettings: () -> Unit,
-    onClearError: () -> Unit = {},
     engine: StreamingEngine,
+    modifier: Modifier = Modifier,
+    onClearError: () -> Unit = {},
     currentLocation: android.location.Location? = null,
     currentAddress: String? = null,
     speedKmh: Float = 0f,
@@ -61,7 +77,6 @@ fun StreamScreen(
     stopConfirmVisible: Boolean = false,
     onConfirmStop: ((endBroadcast: Boolean) -> Unit)? = null,
     onDismissStopConfirm: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
 ) {
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -72,26 +87,52 @@ fun StreamScreen(
     val density = LocalDensity.current.density
     LaunchedEffect(density) { onSetDensity?.invoke(density) }
 
+    val fallbackWidth = settings.currentStream.resolution.width
+    val fallbackHeight = settings.currentStream.resolution.height
+    val previewWidth = if (streamState.videoWidth > 0) streamState.videoWidth else fallbackWidth
+    val previewHeight = if (streamState.videoHeight > 0) streamState.videoHeight else fallbackHeight
+    val safeAspect = computeVideoAspectRatio(previewWidth, previewHeight, isLandscape)
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // Camera Preview
-        CameraPreview(
-            engine = engine,
-            useFrontCamera = settings.camera.useFrontCamera,
-            torchEnabled = torchEnabled,
-            zoomRatio = zoomRatio,
-            fps = settings.currentStream.fps,
-            onCameraZoomRange = { min, max ->
-                minZoomRatio = min
-                maxZoomRatio = max
-                // If current zoom is outside the new camera's supported range, reset to 1x
-                if (zoomRatio < min) zoomRatio = 1.0f
-            },
-            modifier = Modifier.fillMaxSize(),
-        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .then(
+                    if (isLandscape) Modifier.fillMaxHeight().aspectRatio(safeAspect)
+                    else Modifier.fillMaxWidth().aspectRatio(safeAspect)
+                ),
+        ) {
+            CameraPreview(
+                engine = engine,
+                useFrontCamera = settings.camera.useFrontCamera,
+                torchEnabled = torchEnabled,
+                zoomRatio = zoomRatio,
+                fps = settings.currentStream.fps,
+                resolution = settings.currentStream.resolution,
+                onCameraZoomRange = { min, max ->
+                    minZoomRatio = min
+                    maxZoomRatio = max
+                    if (zoomRatio < min) zoomRatio = 1.0f
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+
+            WidgetOverlay(
+                widgetSettings = settings.widgets,
+                currentLocation = currentLocation,
+                currentAddress = currentAddress,
+                speedKmh = speedKmh,
+                mapBitmap = mapBitmap,
+                locationPermissionDenied = locationPermissionDenied,
+                isEditMode = widgetEditMode,
+                onUpdateWidgets = onUpdateWidgets,
+                onRecheckPermission = onRecheckPermission,
+            )
+        }
 
         if (!widgetEditMode) {
             if (isLandscape) {
@@ -133,40 +174,6 @@ fun StreamScreen(
                     onEditWidgets = { widgetEditMode = true },
                 )
             }
-        }
-
-        // Widget overlay — constrained to the same aspect ratio as the video frame
-        // so that widget positions (x/y fractions) match between the UI and the encoded stream.
-        val videoAspectRatio = if (isLandscape) {
-            maxOf(streamState.videoWidth, streamState.videoHeight).toFloat() /
-                minOf(streamState.videoWidth, streamState.videoHeight).toFloat().coerceAtLeast(1f)
-        } else {
-            minOf(streamState.videoWidth, streamState.videoHeight).toFloat() /
-                maxOf(streamState.videoWidth, streamState.videoHeight).toFloat().coerceAtLeast(1f)
-        }
-        val safeAspect = if (videoAspectRatio.isNaN() || videoAspectRatio <= 0f) {
-            if (isLandscape) 16f / 9f else 9f / 16f
-        } else videoAspectRatio
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .then(
-                    if (isLandscape) Modifier.fillMaxHeight().aspectRatio(safeAspect)
-                    else Modifier.fillMaxWidth().aspectRatio(safeAspect)
-                ),
-        ) {
-            WidgetOverlay(
-                widgetSettings = settings.widgets,
-                currentLocation = currentLocation,
-                currentAddress = currentAddress,
-                speedKmh = speedKmh,
-                mapBitmap = mapBitmap,
-                locationPermissionDenied = locationPermissionDenied,
-                isEditMode = widgetEditMode,
-                onUpdateWidgets = onUpdateWidgets,
-                onRecheckPermission = onRecheckPermission,
-            )
         }
 
         // Widget edit mode buttons (reset/done)
@@ -522,18 +529,25 @@ private fun PortraitOverlay(
 }
 
 @Composable
+@OptIn(markerClass = [ExperimentalCamera2Interop::class])
 fun CameraPreview(
     engine: StreamingEngine,
     useFrontCamera: Boolean,
     torchEnabled: Boolean,
+    modifier: Modifier = Modifier,
     zoomRatio: Float = 1.0f,
     fps: Int = 30,
+    resolution: Resolution = Resolution.HD_720,
     onCameraZoomRange: ((minZoom: Float, maxZoom: Float) -> Unit)? = null,
-    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val glPipeline = engine.glPipeline
+    val cameraManager = remember(context) {
+        context.getSystemService(CameraManager::class.java)
+    }
+    val displayRotation = view.display?.rotation ?: Surface.ROTATION_0
 
     val cameraSelector = if (useFrontCamera) {
         CameraSelector.DEFAULT_FRONT_CAMERA
@@ -547,31 +561,73 @@ fun CameraPreview(
         cameraInstance?.cameraControl?.setZoomRatio(zoomRatio)
     }
 
-    DisposableEffect(cameraSelector, torchEnabled, fps) {
+    LaunchedEffect(torchEnabled) {
+        cameraInstance?.cameraControl?.enableTorch(torchEnabled)
+    }
+
+    LaunchedEffect(useFrontCamera) {
+        glPipeline.setFrontCamera(useFrontCamera)
+    }
+
+    DisposableEffect(cameraSelector, fps, resolution, displayRotation) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
             try {
                 cameraProvider.unbindAll()
 
+                val longSide = maxOf(resolution.width, resolution.height)
+                val shortSide = minOf(resolution.width, resolution.height)
+                val resolutionSelector = ResolutionSelector.Builder()
+                    .setResolutionStrategy(
+                        ResolutionStrategy(
+                            Size(longSide, shortSide),
+                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
+                        )
+                    )
+                    .setAspectRatioStrategy(
+                        AspectRatioStrategy(
+                            AspectRatio.RATIO_16_9,
+                            AspectRatioStrategy.FALLBACK_RULE_AUTO,
+                        )
+                    )
+                    .build()
+                val targetFpsRange = findTargetFpsRange(cameraManager, useFrontCamera, fps)
+                val fallbackRotation = findCameraPreviewRotation(cameraManager, useFrontCamera, displayRotation)
+                glPipeline.updateFallbackRotation(fallbackRotation)
+                Log.i(
+                    "CameraPreview",
+                    "Binding camera with displayRotation=${surfaceRotationToDegrees(displayRotation)} fallbackRotation=$fallbackRotation",
+                )
+
                 val preview = Preview.Builder().also { builder ->
-                    // Request 60fps via Camera2Interop if configured
-                    if (fps >= 60) {
-                        androidx.camera.camera2.interop.Camera2Interop.Extender(builder)
+                    builder.setTargetRotation(displayRotation)
+                    builder.setResolutionSelector(resolutionSelector)
+                    if (targetFpsRange != null) {
+                        Camera2Interop.Extender(builder)
                             .setCaptureRequestOption(
                                 android.hardware.camera2.CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
-                                android.util.Range(60, 60),
+                                targetFpsRange,
                             )
                     }
                 }.build()
 
                 preview.setSurfaceProvider(glPipeline.glExecutor) { request ->
                     val size = request.resolution
+                    Log.i("CameraPreview", "Surface request resolution=${size.width}x${size.height}")
                     val surface = glPipeline.prepareCameraSurface(size.width, size.height)
                     if (surface != null) {
                         request.setTransformationInfoListener(glPipeline.glExecutor) { info ->
-                            glPipeline.cameraRotation = info.rotationDegrees
-                            glPipeline.cameraMirroring = info.isMirroring
+                            val resolvedRotation = when {
+                                info.rotationDegrees != 0 -> info.rotationDegrees
+                                glPipeline.fallbackRotation != 0 -> glPipeline.fallbackRotation
+                                else -> 0
+                            }
+                            glPipeline.cameraRotation = resolvedRotation
+                            Log.i(
+                                "CameraPreview",
+                                "TransformationInfo rotation=${info.rotationDegrees} resolved=$resolvedRotation fallback=${glPipeline.fallbackRotation}",
+                            )
                         }
                         request.provideSurface(surface, glPipeline.glExecutor) { /* released */ }
                     } else {
@@ -619,4 +675,93 @@ fun CameraPreview(
         },
         modifier = modifier,
     )
+}
+
+private fun computeVideoAspectRatio(width: Int, height: Int, isLandscape: Boolean): Float {
+    val w = width.coerceAtLeast(1)
+    val h = height.coerceAtLeast(1)
+    val aspect = if (isLandscape) {
+        maxOf(w, h).toFloat() / minOf(w, h).toFloat()
+    } else {
+        minOf(w, h).toFloat() / maxOf(w, h).toFloat()
+    }
+    return if (aspect.isNaN() || aspect <= 0f) {
+        if (isLandscape) 16f / 9f else 9f / 16f
+    } else {
+        aspect
+    }
+}
+
+private fun findTargetFpsRange(
+    cameraManager: CameraManager?,
+    useFrontCamera: Boolean,
+    targetFps: Int,
+): Range<Int>? {
+    if (cameraManager == null || targetFps <= 30) return null
+
+    return try {
+        val desiredFacing = if (useFrontCamera) {
+            CameraCharacteristics.LENS_FACING_FRONT
+        } else {
+            CameraCharacteristics.LENS_FACING_BACK
+        }
+        val cameraId = cameraManager.cameraIdList.firstOrNull { id ->
+            cameraManager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) == desiredFacing
+        } ?: return null
+
+        val ranges = cameraManager.getCameraCharacteristics(cameraId)
+            .get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+            ?.toList()
+            .orEmpty()
+
+        val exactMatch = ranges.firstOrNull { it.lower == targetFps && it.upper == targetFps }
+        if (exactMatch != null) return exactMatch
+
+        ranges
+            .filter { it.upper >= targetFps }
+            .minWithOrNull(
+                compareBy<Range<Int>> { it.upper - targetFps }
+                    .thenBy { targetFps - minOf(it.lower, targetFps) }
+            )
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun findCameraPreviewRotation(
+    cameraManager: CameraManager?,
+    useFrontCamera: Boolean,
+    displayRotation: Int,
+): Int {
+    if (cameraManager == null) return surfaceRotationToDegrees(displayRotation)
+
+    return try {
+        val desiredFacing = if (useFrontCamera) {
+            CameraCharacteristics.LENS_FACING_FRONT
+        } else {
+            CameraCharacteristics.LENS_FACING_BACK
+        }
+        val cameraId = cameraManager.cameraIdList.firstOrNull { id ->
+            cameraManager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) == desiredFacing
+        } ?: return surfaceRotationToDegrees(displayRotation)
+
+        val sensorOrientation = cameraManager.getCameraCharacteristics(cameraId)
+            .get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+        val displayDegrees = surfaceRotationToDegrees(displayRotation)
+
+        if (useFrontCamera) {
+            (sensorOrientation + displayDegrees) % 360
+        } else {
+            (sensorOrientation - displayDegrees + 360) % 360
+        }
+    } catch (_: Exception) {
+        surfaceRotationToDegrees(displayRotation)
+    }
+}
+
+private fun surfaceRotationToDegrees(rotation: Int): Int = when (rotation) {
+    Surface.ROTATION_90 -> 90
+    Surface.ROTATION_180 -> 180
+    Surface.ROTATION_270 -> 270
+    else -> 0
 }

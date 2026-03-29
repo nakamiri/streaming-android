@@ -47,13 +47,13 @@ fun WidgetOverlay(
     widgetSettings: WidgetSettings,
     currentLocation: Location?,
     currentAddress: String?,
+    modifier: Modifier = Modifier,
     speedKmh: Float = 0f,
     mapBitmap: android.graphics.Bitmap? = null,
     locationPermissionDenied: Boolean = false,
     isEditMode: Boolean = false,
     onUpdateWidgets: ((WidgetSettings) -> Unit)? = null,
     onRecheckPermission: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
 ) {
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
     // Use updatedState so lambdas always see latest widgetSettings

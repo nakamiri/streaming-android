@@ -5,7 +5,10 @@ import com.reaream.app.streaming.StreamingEngine.ConnectionQuality
 import com.reaream.app.streaming.StreamingEngine.StreamState
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class StreamingEngineTest {
 
     @Test
@@ -131,22 +134,23 @@ class StreamingEngineTest {
     }
 
     @Test
-    fun `onVideoFrame does nothing when not streaming`() {
-        val engine = StreamingEngine()
-        val buffer = java.nio.ByteBuffer.allocate(100)
-
-        // Should not throw
-        engine.onVideoFrame(buffer, 640, 480, 0L)
-        engine.release()
-    }
-
-    @Test
     fun `onAudioData does nothing when not streaming`() {
         val engine = StreamingEngine()
         val data = ByteArray(1024)
 
         // Should not throw
         engine.onAudioData(data, 0L)
+        engine.release()
+    }
+
+    @Test
+    fun `showError updates state without starting stream`() {
+        val engine = StreamingEngine()
+
+        engine.showError("boom")
+
+        assertEquals("boom", engine.state.value.error)
+        assertFalse(engine.state.value.isStreaming)
         engine.release()
     }
 }

@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.reaream.app.data.model.AudioSettings
 import com.reaream.app.ui.Screen
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,7 +49,7 @@ fun AudioSettingsScreen(
                 headlineContent = { Text("Audio Gain") },
                 supportingContent = {
                     Column {
-                        Text("${String.format("%.1f", audio.gain)}x")
+                        Text("${String.format(Locale.getDefault(), "%.1f", audio.gain)}x")
                         Slider(
                             value = audio.gain,
                             onValueChange = { onUpdate(audio.copy(gain = it)) },

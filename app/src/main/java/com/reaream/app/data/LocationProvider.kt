@@ -99,8 +99,13 @@ class LocationProvider(private val context: Context) {
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
         locationManager = manager
 
-        // Listen on both GPS and FUSED for best coverage
-        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.FUSED_PROVIDER)
+        // Listen on both GPS and fused provider when available for best coverage
+        val providers = buildList {
+            add(LocationManager.GPS_PROVIDER)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                add(LocationManager.FUSED_PROVIDER)
+            }
+        }
         var started = false
         for (provider in providers) {
             try {

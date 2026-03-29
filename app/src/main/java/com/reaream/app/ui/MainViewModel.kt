@@ -36,6 +36,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // YouTube broadcast ID for the current session (to end broadcast on stop)
     private var currentYoutubeBroadcastId: String? = null
+    private var streamingResourcesActive = false
 
     private val _youtubeLiveUrl = MutableStateFlow<String?>(null)
     val youtubeLiveUrl: StateFlow<String?> = _youtubeLiveUrl.asStateFlow()
@@ -114,6 +115,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             locationProvider.address.collect { addr ->
                 streamingEngine.widgetRenderer.currentAddress.set(addr)
+            }
+        }
+        viewModelScope.launch {
+            streamingEngine.state.collect { state ->
+                if (!state.isStreaming && !state.isConnecting && streamingResourcesActive) {
+                    stopStreamingResources()
+                }
             }
         }
     }
@@ -243,17 +251,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _youtubeLiveUrl.value = null
         }
 
-        val context = getApplication<Application>()
-
-        // Start foreground service
-        val intent = Intent(context, StreamingService::class.java).apply {
-            action = StreamingService.ACTION_START
+        config.startValidationError()?.let { error ->
+            streamingEngine.showError(error)
+            return
         }
-        context.startForegroundService(intent)
+
+        val context = getApplication<Application>()
 
         // Start audio capture
         audioCapture.isMuted = settings.value.audio.muted
-        audioCapture.start(context)
+        if (!audioCapture.start(context)) {
+            streamingEngine.showError("マイク権限または初期化に失敗したため、配信を開始できません。")
+            return
+        }
+
+        startStreamingService(context)
+        streamingResourcesActive = true
 
         // Connect chat
         val chatSettings = settings.value.chat
@@ -269,8 +282,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val context = getApplication<Application>()
 
         streamingEngine.stopStreaming()
-        audioCapture.stop()
-        chatManager.disconnect()
+        stopStreamingResources(context)
 
         val broadcastId = currentYoutubeBroadcastId
         if (broadcastId != null) {
@@ -283,6 +295,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             // If not ending, keep broadcastId so user can reconnect via the picker
         }
+
+    }
+
+    private fun startStreamingService(context: Application) {
+        val intent = Intent(context, StreamingService::class.java).apply {
+            action = StreamingService.ACTION_START
+        }
+        context.startForegroundService(intent)
+    }
+
+    private fun stopStreamingResources(context: Application = getApplication()) {
+        if (!streamingResourcesActive) return
+        streamingResourcesActive = false
+        audioCapture.stop()
+        chatManager.disconnect()
 
         val intent = Intent(context, StreamingService::class.java).apply {
             action = StreamingService.ACTION_STOP
@@ -409,6 +436,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
+        stopStreamingResources()
         streamingEngine.release()
         audioCapture.release()
         chatManager.release()

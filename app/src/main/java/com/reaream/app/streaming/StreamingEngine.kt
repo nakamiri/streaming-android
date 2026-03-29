@@ -10,20 +10,37 @@ import com.reaream.app.data.model.StreamConfig
 import com.reaream.app.data.model.StreamProtocol
 import com.reaream.app.data.model.VideoCodec
 import com.reaream.app.data.model.WidgetSettings
+import com.reaream.app.data.model.startValidationError
 import com.reaream.app.streaming.gl.GlStreamPipeline
 import com.reaream.app.streaming.protocol.RtmpConnection
 import com.reaream.app.streaming.protocol.SrtConnection
 import com.reaream.app.streaming.protocol.StreamConnection
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
+import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 class StreamingEngine {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val shutdownMutex = Mutex()
 
     private val _state = MutableStateFlow(StreamState())
     val state: StateFlow<StreamState> = _state.asStateFlow()
@@ -39,21 +56,21 @@ class StreamingEngine {
     private var audioEncoder: MediaCodec? = null
     private var connection: StreamConnection? = null
     private var currentConfig: StreamConfig? = null
+    private var videoOutputJob: Job? = null
+    private var statsJob: Job? = null
+
     private var startTimeNanos: Long = 0L
     private var baseAudioTimestampUs: Long = -1L
-    private var totalBytesSent: Long = 0L
+    private val totalBytesSent = AtomicLong(0L)
 
-    // Adaptive bitrate
     private var poorQualityStreak: Int = 0
     private var goodQualityStreak: Int = 0
     private var configuredBitrateKbps: Int = 0
     private var currentAdaptiveBitrateKbps: Int = 0
 
-    // Per-second frame counters
-    private val framesSubmittedThisSecond = AtomicInteger(0) // frames dequeued from encoder output
-
-    // Signals when the video encoder surface has been set up (lazy — waits for first camera frame)
-    private var videoEncoderReadySignal = CompletableDeferred<Unit>()
+    private val videoFramesSentThisSecond = AtomicInteger(0)
+    private val videoFramesDroppedThisSecond = AtomicInteger(0)
+    private val sessionVersion = AtomicInteger(0)
 
     data class StreamState(
         val isStreaming: Boolean = false,
@@ -74,137 +91,80 @@ class StreamingEngine {
     fun startStreaming(config: StreamConfig) {
         if (_state.value.isStreaming || _state.value.isConnecting) return
 
-        if (config.url.isBlank()) {
-            _state.value = _state.value.copy(
-                error = "配信URLが設定されていません。設定画面でURLを入力してください。",
-            )
+        config.startValidationError()?.let {
+            showError(it)
             return
         }
 
-        _state.value = _state.value.copy(isConnecting = true, error = null)
+        val session = sessionVersion.incrementAndGet()
         currentConfig = config
-        videoEncoderReadySignal = CompletableDeferred()
+        configuredBitrateKbps = config.videoBitrate
+        currentAdaptiveBitrateKbps = 0
+        poorQualityStreak = 0
+        goodQualityStreak = 0
+        totalBytesSent.set(0L)
+        baseAudioTimestampUs = -1L
+        videoFramesSentThisSecond.set(0)
+        videoFramesDroppedThisSecond.set(0)
+        glPipeline.framesRendered.set(0)
+        glPipeline.framesDropped.set(0)
+        glPipeline.onFirstFrameReady = { rotationDegrees ->
+            if (isSessionActive(session)) {
+                scope.launch { setupVideoEncoderForSurface(session, config, rotationDegrees) }
+            }
+        }
+
+        _state.value = StreamState(isConnecting = true)
 
         scope.launch {
             try {
-                // Wire the GL pipeline to call back when the first camera frame arrives,
-                // so we can lazy-init the video encoder with the correct orientation.
-                glPipeline.onFirstFrameReady = { rotationDegrees ->
-                    scope.launch { setupVideoEncoderForSurface(config, rotationDegrees) }
-                }
-
                 setupAudioEncoder(config)
-                connection = createConnection(config)
-                withTimeout(10_000L) { connection?.connect() }
+                val createdConnection = createConnection(config)
+                connection = createdConnection
+                withTimeout(10_000L) { createdConnection.connect() }
+
+                if (!isSessionActive(session)) {
+                    try {
+                        createdConnection.disconnect()
+                    } catch (_: Exception) {
+                    }
+                    return@launch
+                }
 
                 startTimeNanos = System.nanoTime()
                 baseAudioTimestampUs = -1L
-                totalBytesSent = 0
-                _state.value = _state.value.copy(isStreaming = true, isConnecting = false)
-                launchStatsUpdater()
+                totalBytesSent.set(0L)
+                _state.value = _state.value.copy(isStreaming = true, isConnecting = false, error = null)
 
-                // Start the video output loop only after isStreaming = true.
-                // The encoder may have been set up while connecting (first frame arrived early)
-                // or may still be pending — wait for the signal either way.
-                scope.launch {
-                    try {
-                        withTimeout(15_000L) { videoEncoderReadySignal.await() }
-                        if (_state.value.isStreaming) launchVideoOutputLoop()
-                    } catch (_: Exception) {
-                        Log.d(TAG, "Video encoder ready signal cancelled or timed out")
-                    }
+                val currentState = _state.value
+                if (currentState.videoWidth > 0 && currentState.videoHeight > 0) {
+                    createdConnection.updateVideoParameters(
+                        currentState.videoWidth,
+                        currentState.videoHeight,
+                        config.videoCodec,
+                    )
                 }
+
+                ensureVideoOutputLoop(session)
+                launchStatsUpdater(session)
             } catch (e: TimeoutCancellationException) {
-                Log.e(TAG, "Connection timed out", e)
-                _state.value = _state.value.copy(
-                    isStreaming = false, isConnecting = false,
-                    error = "接続がタイムアウトしました",
-                )
-                releaseEncoders()
+                handleStartFailure(session, "接続がタイムアウトしました", e)
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to start streaming", e)
-                _state.value = _state.value.copy(
-                    isStreaming = false, isConnecting = false,
-                    error = e.message?.takeIf { it.isNotBlank() }
+                handleStartFailure(
+                    session,
+                    e.message?.takeIf { it.isNotBlank() }
                         ?: "接続に失敗しました: ${e.javaClass.simpleName}",
+                    e,
                 )
-                releaseEncoders()
             }
         }
     }
 
-    private fun setupVideoEncoderForSurface(config: StreamConfig, rotationDegrees: Int) {
-        if (videoEncoder != null) return // already set up
-        if (!_state.value.isConnecting && !_state.value.isStreaming) return // streaming cancelled
-        val isPortrait = (rotationDegrees == 90 || rotationDegrees == 270)
-        val encW = if (isPortrait) minOf(config.resolution.width, config.resolution.height)
-                   else maxOf(config.resolution.width, config.resolution.height)
-        val encH = if (isPortrait) maxOf(config.resolution.width, config.resolution.height)
-                   else minOf(config.resolution.width, config.resolution.height)
-
-        val videoMime = when (config.videoCodec) {
-            VideoCodec.H264 -> MediaFormat.MIMETYPE_VIDEO_AVC
-            VideoCodec.H265 -> MediaFormat.MIMETYPE_VIDEO_HEVC
-        }
-        val videoFormat = MediaFormat.createVideoFormat(videoMime, encW, encH).apply {
-            setInteger(MediaFormat.KEY_BIT_RATE, config.videoBitrate * 1000)
-            setInteger(MediaFormat.KEY_FRAME_RATE, config.fps)
-            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
-            setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
-            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-        }
-
-        try {
-            val encoder = MediaCodec.createEncoderByType(videoMime)
-            encoder.configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            val encSurface = encoder.createInputSurface()
-            encoder.start()
-            videoEncoder = encoder
-            videoEncoderSurface = encSurface
-
-            configuredBitrateKbps = config.videoBitrate
-            currentAdaptiveBitrateKbps = 0
-            glPipeline.attachEncoderSurface(encSurface, encW, encH)
-
-            _state.value = _state.value.copy(videoWidth = encW, videoHeight = encH)
-            Log.i(TAG, "Video encoder started (Surface input): ${encW}x${encH}, ${config.videoBitrate}kbps")
-
-            // Signal that the encoder is ready. The output loop will be started by startStreaming()
-            // after isStreaming = true, to guarantee the loop condition is met on first check.
-            videoEncoderReadySignal.complete(Unit)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to setup video encoder", e)
-        }
-    }
-
-    private fun launchVideoOutputLoop() {
-        scope.launch {
-            val info = MediaCodec.BufferInfo()
-            while (_state.value.isStreaming) {
-                val enc = videoEncoder ?: break
-                try {
-                    val outputIndex = enc.dequeueOutputBuffer(info, 10_000)
-                    when {
-                        outputIndex >= 0 -> {
-                            val buffer = enc.getOutputBuffer(outputIndex)
-                            if (buffer != null && info.size > 0) {
-                                val data = ByteArray(info.size)
-                                buffer.get(data)
-                                connection?.sendVideo(data, info.presentationTimeUs, info.flags)
-                                totalBytesSent += data.size
-                            }
-                            enc.releaseOutputBuffer(outputIndex, false)
-                            framesSubmittedThisSecond.incrementAndGet()
-                        }
-                        outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                            Log.d(TAG, "Encoder output format changed")
-                        }
-                    }
-                } catch (e: Exception) {
-                    if (_state.value.isStreaming) Log.e(TAG, "Video output error", e)
-                    break
-                }
-            }
+    fun showError(message: String) {
+        _state.value = if (_state.value.isStreaming || _state.value.isConnecting) {
+            _state.value.copy(isConnecting = false, error = message)
+        } else {
+            StreamState(error = message)
         }
     }
 
@@ -213,14 +173,8 @@ class StreamingEngine {
     }
 
     fun stopStreaming() {
-        scope.launch {
-            videoEncoderReadySignal.cancel()
-            try { connection?.disconnect() } catch (e: Exception) { Log.e(TAG, "Disconnect error", e) }
-            connection = null
-            releaseEncoders()
-            currentConfig = null
-            _state.value = StreamState()
-        }
+        if (!_state.value.isStreaming && !_state.value.isConnecting && currentConfig == null) return
+        scope.launch { shutdownStreaming(null) }
     }
 
     fun onAudioData(buffer: ByteArray, presentationTimeUs: Long) {
@@ -237,15 +191,16 @@ class StreamingEngine {
                     inputBuffer.put(buffer, 0, size)
                     encoder.queueInputBuffer(inputIndex, 0, size, relativeUs, 0)
                 }
+
                 val info = MediaCodec.BufferInfo()
                 var outputIndex = encoder.dequeueOutputBuffer(info, 0)
                 while (outputIndex >= 0) {
                     val outputBuffer = encoder.getOutputBuffer(outputIndex)
                     if (outputBuffer != null && info.size > 0) {
-                        val data = ByteArray(info.size)
-                        outputBuffer.get(data)
-                        connection?.sendAudio(data, info.presentationTimeUs, info.flags)
-                        totalBytesSent += data.size
+                        val data = copyOutputBuffer(outputBuffer, info)
+                        if (connection?.sendAudio(data, info.presentationTimeUs, info.flags) == true) {
+                            totalBytesSent.addAndGet(data.size.toLong())
+                        }
                     }
                     encoder.releaseOutputBuffer(outputIndex, false)
                     outputIndex = encoder.dequeueOutputBuffer(info, 0)
@@ -253,7 +208,208 @@ class StreamingEngine {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error encoding audio", e)
+            if (_state.value.isStreaming) {
+                failStreaming(sessionVersion.get(), "音声送信中にエラーが発生しました", e)
+            }
         }
+    }
+
+    fun release() {
+        runBlocking {
+            shutdownStreaming(null)
+        }
+        glPipeline.release()
+        widgetRenderer.release()
+        scope.cancel()
+    }
+
+    private fun isSessionActive(session: Int): Boolean = sessionVersion.get() == session
+
+    private fun handleStartFailure(session: Int, message: String, cause: Throwable? = null) {
+        if (!isSessionActive(session)) return
+        if (cause != null) {
+            Log.e(TAG, message, cause)
+        } else {
+            Log.e(TAG, message)
+        }
+        scope.launch { shutdownStreaming(message) }
+    }
+
+    private fun failStreaming(session: Int, message: String, cause: Throwable? = null) {
+        if (!isSessionActive(session)) return
+        if (cause != null) {
+            Log.e(TAG, message, cause)
+        } else {
+            Log.e(TAG, message)
+        }
+        scope.launch { shutdownStreaming(message) }
+    }
+
+    private suspend fun setupVideoEncoderForSurface(
+        session: Int,
+        config: StreamConfig,
+        rotationDegrees: Int,
+    ) {
+        if (!isSessionActive(session) || videoEncoder != null) return
+
+        val isPortrait = rotationDegrees == 90 || rotationDegrees == 270
+        val encW = if (isPortrait) {
+            minOf(config.resolution.width, config.resolution.height)
+        } else {
+            maxOf(config.resolution.width, config.resolution.height)
+        }
+        val encH = if (isPortrait) {
+            maxOf(config.resolution.width, config.resolution.height)
+        } else {
+            minOf(config.resolution.width, config.resolution.height)
+        }
+
+        val videoMime = when (config.videoCodec) {
+            VideoCodec.H264 -> MediaFormat.MIMETYPE_VIDEO_AVC
+            VideoCodec.H265 -> MediaFormat.MIMETYPE_VIDEO_HEVC
+        }
+
+        val videoFormat = MediaFormat.createVideoFormat(videoMime, encW, encH).apply {
+            setInteger(MediaFormat.KEY_BIT_RATE, config.videoBitrate * 1000)
+            setInteger(MediaFormat.KEY_FRAME_RATE, config.fps)
+            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
+            setInteger(
+                MediaFormat.KEY_BITRATE_MODE,
+                MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR,
+            )
+            setInteger(
+                MediaFormat.KEY_COLOR_FORMAT,
+                MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface,
+            )
+            setInteger(MediaFormat.KEY_OPERATING_RATE, maxOf(config.fps, 30))
+            setInteger(MediaFormat.KEY_PRIORITY, 0)
+        }
+
+        try {
+            val encoder = MediaCodec.createEncoderByType(videoMime)
+            encoder.configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            val encSurface = encoder.createInputSurface()
+            encoder.start()
+
+            if (!isSessionActive(session)) {
+                try {
+                    encoder.stop()
+                } catch (_: Exception) {
+                }
+                try {
+                    encoder.release()
+                } catch (_: Exception) {
+                }
+                try {
+                    encSurface.release()
+                } catch (_: Exception) {
+                }
+                return
+            }
+
+            videoEncoder = encoder
+            videoEncoderSurface = encSurface
+            glPipeline.attachEncoderSurfaceSync(encSurface, encW, encH)
+            connection?.updateVideoParameters(encW, encH, config.videoCodec)
+            _state.value = _state.value.copy(videoWidth = encW, videoHeight = encH)
+
+            Log.i(TAG, "Video encoder started (Surface input): ${encW}x${encH}, ${config.videoBitrate}kbps")
+
+            if (_state.value.isStreaming) {
+                ensureVideoOutputLoop(session)
+            }
+        } catch (e: Exception) {
+            if (_state.value.isConnecting) {
+                handleStartFailure(session, "映像エンコーダの初期化に失敗しました", e)
+            } else {
+                failStreaming(session, "映像エンコーダの初期化に失敗しました", e)
+            }
+        }
+    }
+
+    private fun ensureVideoOutputLoop(session: Int) {
+        if (!isSessionActive(session) || !_state.value.isStreaming || videoEncoder == null) return
+        if (videoOutputJob?.isActive == true) return
+
+        videoOutputJob = scope.launch {
+            val info = MediaCodec.BufferInfo()
+            while (isSessionActive(session) && _state.value.isStreaming) {
+                val encoder = videoEncoder ?: break
+                try {
+                    when (val outputIndex = encoder.dequeueOutputBuffer(info, 10_000)) {
+                        MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
+                        MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                            sendVideoCodecConfigFromFormat(encoder.outputFormat)
+                        }
+                        else -> if (outputIndex >= 0) {
+                            val outputBuffer = encoder.getOutputBuffer(outputIndex)
+                            if (outputBuffer != null && info.size > 0) {
+                                val data = copyOutputBuffer(outputBuffer, info)
+                                val isCodecConfig =
+                                    info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
+                                val sent = connection?.sendVideo(data, info.presentationTimeUs, info.flags) == true
+                                if (!isCodecConfig) {
+                                    if (sent) {
+                                        totalBytesSent.addAndGet(data.size.toLong())
+                                        videoFramesSentThisSecond.incrementAndGet()
+                                    } else {
+                                        videoFramesDroppedThisSecond.incrementAndGet()
+                                    }
+                                }
+                            }
+                            encoder.releaseOutputBuffer(outputIndex, false)
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (isSessionActive(session) && _state.value.isStreaming) {
+                        failStreaming(session, "映像送信中にエラーが発生しました", e)
+                    }
+                    break
+                }
+            }
+        }
+    }
+
+    private fun sendVideoCodecConfigFromFormat(format: MediaFormat) {
+        val codecConfig = buildCodecConfigBuffer(format) ?: run {
+            Log.w(TAG, "Encoder output format did not expose codec config buffers")
+            return
+        }
+        if (connection?.sendVideo(codecConfig, 0L, MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != true) {
+            Log.w(TAG, "Failed to send codec config from output format")
+        }
+    }
+
+    private fun buildCodecConfigBuffer(format: MediaFormat): ByteArray? {
+        val csdBuffers = listOfNotNull(
+            format.getByteBuffer("csd-0")?.duplicate(),
+            format.getByteBuffer("csd-1")?.duplicate(),
+            format.getByteBuffer("csd-2")?.duplicate(),
+        )
+        if (csdBuffers.isEmpty()) return null
+
+        val totalSize = csdBuffers.sumOf { 4 + it.remaining() }
+        val out = ByteArray(totalSize)
+        var offset = 0
+        for (buffer in csdBuffers) {
+            out[offset++] = 0
+            out[offset++] = 0
+            out[offset++] = 0
+            out[offset++] = 1
+            val size = buffer.remaining()
+            buffer.get(out, offset, size)
+            offset += size
+        }
+        return out
+    }
+
+    private fun copyOutputBuffer(buffer: ByteBuffer, info: MediaCodec.BufferInfo): ByteArray {
+        val dup = buffer.duplicate()
+        dup.position(info.offset)
+        dup.limit(info.offset + info.size)
+        return ByteArray(info.size).also { dup.get(it) }
     }
 
     private fun setupAudioEncoder(config: StreamConfig) {
@@ -277,7 +433,7 @@ class StreamingEngine {
                 sampleRate = 44100,
             )
             StreamProtocol.SRT -> SrtConnection(url, config.srtLatency)
-            StreamProtocol.RIST -> RtmpConnection(url)
+            StreamProtocol.RIST -> throw UnsupportedOperationException("RIST 配信はまだ実装されていません。")
         }
     }
 
@@ -287,43 +443,84 @@ class StreamingEngine {
     }
 
     private fun releaseEncoders() {
-        videoEncoderReadySignal.cancel()
-        // Synchronously detach the encoder EGL surface on the GL thread before stopping the codec.
-        // Without this, the GL thread may be mid-swapBuffers when we call stop(), causing a crash.
         glPipeline.detachEncoderSurfaceSync()
 
-        try { videoEncoder?.stop(); videoEncoder?.release() } catch (_: Exception) {}
+        try {
+            videoEncoder?.stop()
+        } catch (_: Exception) {
+        }
+        try {
+            videoEncoder?.release()
+        } catch (_: Exception) {
+        }
         videoEncoder = null
-        videoEncoderSurface?.release()
+
+        try {
+            videoEncoderSurface?.release()
+        } catch (_: Exception) {
+        }
         videoEncoderSurface = null
 
-        try { audioEncoder?.stop(); audioEncoder?.release() } catch (_: Exception) {}
+        try {
+            audioEncoder?.stop()
+        } catch (_: Exception) {
+        }
+        try {
+            audioEncoder?.release()
+        } catch (_: Exception) {
+        }
         audioEncoder = null
 
         baseAudioTimestampUs = -1L
         poorQualityStreak = 0
         goodQualityStreak = 0
+        configuredBitrateKbps = 0
         currentAdaptiveBitrateKbps = 0
-        framesSubmittedThisSecond.set(0)
+        videoFramesSentThisSecond.set(0)
+        videoFramesDroppedThisSecond.set(0)
+        glPipeline.framesRendered.set(0)
+        glPipeline.framesDropped.set(0)
     }
 
-    private fun launchStatsUpdater() {
-        scope.launch {
+    private fun launchStatsUpdater(session: Int) {
+        statsJob?.cancel()
+        statsJob = scope.launch {
             var lastBytes = 0L
-            while (_state.value.isStreaming) {
+            var secondsWithoutVideo = 0
+
+            while (isSessionActive(session) && _state.value.isStreaming) {
                 delay(1000)
+
+                if (!isSessionActive(session) || !_state.value.isStreaming) break
+
+                val currentConnection = connection
+                if (currentConnection != null && !currentConnection.isConnected) {
+                    failStreaming(session, "接続が切断されました")
+                    break
+                }
+
+                secondsWithoutVideo = if (videoEncoder == null) secondsWithoutVideo + 1 else 0
+                if (secondsWithoutVideo >= 5) {
+                    failStreaming(session, "カメラ映像の開始に失敗しました")
+                    break
+                }
+
                 val elapsed = (System.nanoTime() - startTimeNanos) / 1_000_000_000L
-                val bytesDelta = totalBytesSent - lastBytes
-                lastBytes = totalBytesSent
+                val bytesNow = totalBytesSent.get()
+                val bytesDelta = bytesNow - lastBytes
+                lastBytes = bytesNow
                 val bitrateKbps = ((bytesDelta * 8) / 1000).toInt()
+                val fps = videoFramesSentThisSecond.getAndSet(0)
+                val dropped = videoFramesDroppedThisSecond.getAndSet(0) +
+                    glPipeline.framesDropped.getAndSet(0)
 
-                // framesRendered = frames submitted to encoder (GL swaps); framesSubmittedThisSecond = frames dequeued from encoder output
-                val glFrames = glPipeline.framesRendered.getAndSet(0)
-                val fps = framesSubmittedThisSecond.getAndSet(0)
-                val dropped = maxOf(0, glFrames - fps)
-
-                val ratio = if (configuredBitrateKbps > 0) bitrateKbps.toFloat() / configuredBitrateKbps else 1f
+                val ratio = if (configuredBitrateKbps > 0) {
+                    bitrateKbps.toFloat() / configuredBitrateKbps
+                } else {
+                    1f
+                }
                 val quality = when {
+                    currentConnection == null || !currentConnection.isConnected -> ConnectionQuality.POOR
                     bitrateKbps <= 0 || ratio < 0.4f -> ConnectionQuality.POOR
                     ratio < 0.75f -> ConnectionQuality.FAIR
                     else -> ConnectionQuality.GOOD
@@ -337,49 +534,101 @@ class StreamingEngine {
                     connectionQuality = quality,
                 )
 
-                // Adaptive bitrate
                 val config = currentConfig
-                if (config != null && config.adaptiveBitrate && configuredBitrateKbps > 0) {
+                if (config != null && config.adaptiveBitrate && configuredBitrateKbps > 0 && videoEncoder != null) {
                     when (quality) {
-                        ConnectionQuality.POOR -> { poorQualityStreak++; goodQualityStreak = 0 }
-                        ConnectionQuality.GOOD -> { goodQualityStreak++; poorQualityStreak = 0 }
-                        else -> { poorQualityStreak = 0; goodQualityStreak = 0 }
+                        ConnectionQuality.POOR -> {
+                            poorQualityStreak++
+                            goodQualityStreak = 0
+                        }
+                        ConnectionQuality.GOOD -> {
+                            goodQualityStreak++
+                            poorQualityStreak = 0
+                        }
+                        else -> {
+                            poorQualityStreak = 0
+                            goodQualityStreak = 0
+                        }
                     }
-                    val floor = (configuredBitrateKbps * 0.4).toInt()
+
+                    val floor = (configuredBitrateKbps * 0.4f).toInt()
                     if (poorQualityStreak >= 3) {
                         poorQualityStreak = 0
-                        val current = if (currentAdaptiveBitrateKbps > 0) currentAdaptiveBitrateKbps else configuredBitrateKbps
-                        val reduced = maxOf((current * 0.75).toInt(), floor)
+                        val current = if (currentAdaptiveBitrateKbps > 0) {
+                            currentAdaptiveBitrateKbps
+                        } else {
+                            configuredBitrateKbps
+                        }
+                        val reduced = maxOf((current * 0.75f).toInt(), floor)
                         if (reduced < current) {
+                            applyAdaptiveBitrate(reduced)
                             currentAdaptiveBitrateKbps = reduced
-                            Log.i(TAG, "Adaptive: reducing bitrate to ${reduced}kbps")
-                            videoEncoder?.setParameters(Bundle().apply {
-                                putInt(MediaFormat.KEY_BIT_RATE, reduced * 1000)
-                            })
                             _state.value = _state.value.copy(adaptiveBitrateKbps = reduced)
                         }
                     }
+
                     if (goodQualityStreak >= 10 && currentAdaptiveBitrateKbps > 0) {
                         goodQualityStreak = 0
-                        val restored = minOf(configuredBitrateKbps, (currentAdaptiveBitrateKbps * 1.5).toInt())
+                        val restored = minOf(
+                            configuredBitrateKbps,
+                            (currentAdaptiveBitrateKbps * 1.5f).toInt(),
+                        )
                         currentAdaptiveBitrateKbps = if (restored >= configuredBitrateKbps) 0 else restored
-                        val target = if (currentAdaptiveBitrateKbps == 0) configuredBitrateKbps else restored
-                        Log.i(TAG, "Adaptive: restoring bitrate to ${target}kbps")
-                        videoEncoder?.setParameters(Bundle().apply {
-                            putInt(MediaFormat.KEY_BIT_RATE, target * 1000)
-                        })
-                        _state.value = _state.value.copy(adaptiveBitrateKbps = currentAdaptiveBitrateKbps)
+                        val target = if (currentAdaptiveBitrateKbps == 0) {
+                            configuredBitrateKbps
+                        } else {
+                            restored
+                        }
+                        applyAdaptiveBitrate(target)
+                        _state.value = _state.value.copy(
+                            adaptiveBitrateKbps = currentAdaptiveBitrateKbps,
+                        )
                     }
                 }
             }
         }
     }
 
-    fun release() {
-        stopStreaming()
-        widgetRenderer.release()
-        glPipeline.release()
-        scope.cancel()
+    private fun applyAdaptiveBitrate(targetKbps: Int) {
+        try {
+            videoEncoder?.setParameters(Bundle().apply {
+                putInt(MediaFormat.KEY_BIT_RATE, targetKbps * 1000)
+            })
+            Log.i(TAG, "Adaptive: set bitrate to ${targetKbps}kbps")
+        } catch (e: Exception) {
+            Log.w(TAG, "Adaptive bitrate update failed", e)
+        }
+    }
+
+    private suspend fun shutdownStreaming(error: String?) {
+        shutdownMutex.withLock {
+            sessionVersion.incrementAndGet()
+
+            val outputJob = videoOutputJob
+            videoOutputJob = null
+            if (outputJob != null) {
+                outputJob.cancelAndJoin()
+            }
+
+            val updaterJob = statsJob
+            statsJob = null
+            if (updaterJob != null) {
+                updaterJob.cancelAndJoin()
+            }
+
+            val currentConnection = connection
+            connection = null
+            try {
+                currentConnection?.disconnect()
+            } catch (e: Exception) {
+                Log.w(TAG, "Error disconnecting stream connection", e)
+            }
+
+            releaseEncoders()
+            currentConfig = null
+            glPipeline.onFirstFrameReady = null
+            _state.value = StreamState(error = error)
+        }
     }
 
     companion object {
