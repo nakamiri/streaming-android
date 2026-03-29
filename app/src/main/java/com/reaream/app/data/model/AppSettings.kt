@@ -36,6 +36,7 @@ data class AudioSettings(
 data class DisplaySettings(
     val showChat: Boolean = true,
     val showStreamInfo: Boolean = true,
+    val showDeviceTemperature: Boolean = true,
     val showAudioLevel: Boolean = true,
     val showBitrate: Boolean = true,
     val showFps: Boolean = true,

@@ -49,6 +49,12 @@ fun DisplaySettingsScreen(
                 onCheckedChange = { onUpdate(display.copy(showStreamInfo = it)) },
             )
             SwitchItem(
+                title = "Show Device Temperature",
+                subtitle = "Always show device temperature in the stream HUD",
+                checked = display.showDeviceTemperature,
+                onCheckedChange = { onUpdate(display.copy(showDeviceTemperature = it)) },
+            )
+            SwitchItem(
                 title = "Show Audio Level",
                 subtitle = "Show audio level meter",
                 checked = display.showAudioLevel,

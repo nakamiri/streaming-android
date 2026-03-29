@@ -46,7 +46,7 @@ class AppSettingsTest {
             selectedStreamIndex = 1,
             camera = CameraSettings(useFrontCamera = true, zoomLevel = 2.5f),
             audio = AudioSettings(muted = true, gain = 0.5f),
-            display = DisplaySettings(showChat = false, showFps = false),
+            display = DisplaySettings(showChat = false, showFps = false, showDeviceTemperature = false),
             chat = ChatSettings(twitchChannelName = "testchannel"),
             recording = RecordingSettings(enabled = true, videoBitrate = 8000),
         )
@@ -79,6 +79,7 @@ class AppSettingsTest {
         val display = DisplaySettings()
         assertTrue(display.showChat)
         assertTrue(display.showStreamInfo)
+        assertTrue(display.showDeviceTemperature)
         assertTrue(display.showAudioLevel)
         assertTrue(display.showBitrate)
         assertTrue(display.showFps)

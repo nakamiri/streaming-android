@@ -42,6 +42,8 @@ fun StreamInfoOverlay(
     screenBlackoutEnabled: Boolean = false,
 ) {
     val batteryTemperatureC = rememberBatteryTemperatureCelsius()
+    val showStreamInfo = settings.display.showStreamInfo && streamState.isStreaming
+    val showDeviceTemperature = settings.display.showDeviceTemperature
     var showThermalDetails by remember { mutableStateOf(false) }
 
     Column(
@@ -55,31 +57,33 @@ fun StreamInfoOverlay(
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         // Live indicator
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                text = "LIVE",
-                color = Color(0xFFFF4444),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .background(Color(0x44FF4444), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            )
+        if (showStreamInfo) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "LIVE",
+                    color = Color(0xFFFF4444),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .background(Color(0x44FF4444), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
 
-            val qualityColor = when (streamState.connectionQuality) {
-                StreamingEngine.ConnectionQuality.GOOD -> Color(0xFF4CAF50)
-                StreamingEngine.ConnectionQuality.FAIR -> Color(0xFFFFC107)
-                StreamingEngine.ConnectionQuality.POOR -> Color(0xFFFF4444)
-                StreamingEngine.ConnectionQuality.UNKNOWN -> Color.Gray
+                val qualityColor = when (streamState.connectionQuality) {
+                    StreamingEngine.ConnectionQuality.GOOD -> Color(0xFF4CAF50)
+                    StreamingEngine.ConnectionQuality.FAIR -> Color(0xFFFFC107)
+                    StreamingEngine.ConnectionQuality.POOR -> Color(0xFFFF4444)
+                    StreamingEngine.ConnectionQuality.UNKNOWN -> Color.Gray
+                }
+                Text(
+                    text = "\u25CF",
+                    color = qualityColor,
+                    fontSize = 12.sp,
+                )
             }
-            Text(
-                text = "\u25CF",
-                color = qualityColor,
-                fontSize = 12.sp,
-            )
         }
 
-        if (onToggleThermalMitigation != null) {
+        if (showStreamInfo && onToggleThermalMitigation != null) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -99,25 +103,27 @@ fun StreamInfoOverlay(
             }
         }
 
-        if (settings.display.showBitrate) {
+        if (showStreamInfo && settings.display.showBitrate) {
             InfoText("${streamState.bitrateKbps} kbps")
         }
 
-        batteryTemperatureC?.let { temp ->
-            val tempColor = when {
-                temp >= 44f -> Color(0xFFFF6B6B)
-                temp >= 40f -> Color(0xFFFFC107)
-                else -> Color.White
+        if (showDeviceTemperature) {
+            batteryTemperatureC?.let { temp ->
+                val tempColor = when {
+                    temp >= 44f -> Color(0xFFFF6B6B)
+                    temp >= 40f -> Color(0xFFFFC107)
+                    else -> Color.White
+                }
+                Text(
+                    text = String.format(Locale.getDefault(), "%.1f°C", temp),
+                    color = tempColor,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                )
             }
-            Text(
-                text = String.format(Locale.getDefault(), "%.1f°C", temp),
-                color = tempColor,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-            )
         }
 
-        if (settings.display.showFps && streamState.fps > 0) {
+        if (showStreamInfo && settings.display.showFps && streamState.fps > 0) {
             val fpsColor = when {
                 streamState.droppedFramesPerSec > 5 -> Color(0xFFFF4444)
                 streamState.droppedFramesPerSec > 0 -> Color(0xFFFFC107)
@@ -136,12 +142,12 @@ fun StreamInfoOverlay(
             )
         }
 
-        if (streamState.videoWidth > 0) {
+        if (showStreamInfo && streamState.videoWidth > 0) {
             val resLabel = "${streamState.videoWidth}x${streamState.videoHeight}"
             InfoText(resLabel)
         }
 
-        if (streamState.adaptiveBitrateKbps > 0) {
+        if (showStreamInfo && streamState.adaptiveBitrateKbps > 0) {
             Text(
                 text = "▼ ${streamState.adaptiveBitrateKbps}kbps",
                 color = Color(0xFFFFC107),
@@ -150,14 +156,14 @@ fun StreamInfoOverlay(
             )
         }
 
-        if (settings.display.showUptime) {
+        if (showStreamInfo && settings.display.showUptime) {
             val hours = streamState.uptime / 3600
             val minutes = (streamState.uptime % 3600) / 60
             val seconds = streamState.uptime % 60
             InfoText(String.format(Locale.getDefault(), "%02d:%02d:%02d", hours, minutes, seconds))
         }
 
-        if (youtubeLiveUrl != null) {
+        if (showStreamInfo && youtubeLiveUrl != null) {
             val context = LocalContext.current
             var copied by remember { mutableStateOf(false) }
             Icon(

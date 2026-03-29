@@ -551,7 +551,7 @@ private fun LandscapeOverlay(
     onEditWidgets: () -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
-        if (settings.display.showStreamInfo && streamState.isStreaming) {
+        if ((settings.display.showStreamInfo && streamState.isStreaming) || settings.display.showDeviceTemperature) {
             StreamInfoOverlay(
                 streamState = streamState,
                 settings = settings,
@@ -628,7 +628,7 @@ private fun PortraitOverlay(
                 .fillMaxWidth()
                 .weight(1f),
         ) {
-            if (settings.display.showStreamInfo && streamState.isStreaming) {
+            if ((settings.display.showStreamInfo && streamState.isStreaming) || settings.display.showDeviceTemperature) {
                 StreamInfoOverlay(
                     streamState = streamState,
                     settings = settings,
