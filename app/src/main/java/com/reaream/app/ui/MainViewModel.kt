@@ -73,6 +73,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val settings: StateFlow<AppSettings> = settingsRepo.settings
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
 
+    val streamState: StateFlow<StreamingEngine.StreamState> = streamingEngine.state
+
+    private val _torchEnabled = MutableStateFlow(false)
+    val torchEnabled: StateFlow<Boolean> = _torchEnabled.asStateFlow()
+
+    private val _screenBlackoutEnabled = MutableStateFlow(false)
+    val screenBlackoutEnabled: StateFlow<Boolean> = _screenBlackoutEnabled.asStateFlow()
+
     init {
         // Sync widget settings and location data to streaming engine
         viewModelScope.launch {
@@ -122,14 +130,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (!state.isStreaming && !state.isConnecting && streamingResourcesActive) {
                     stopStreamingResources()
                 }
+                if (!state.isStreaming && !state.isConnecting && _screenBlackoutEnabled.value) {
+                    _screenBlackoutEnabled.value = false
+                }
             }
         }
     }
-
-    val streamState: StateFlow<StreamingEngine.StreamState> = streamingEngine.state
-
-    private val _torchEnabled = MutableStateFlow(false)
-    val torchEnabled: StateFlow<Boolean> = _torchEnabled.asStateFlow()
 
     private val _screenStack = mutableListOf<Screen>(Screen.Stream)
     private val _currentScreen = MutableStateFlow<Screen>(Screen.Stream)
@@ -330,6 +336,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleThermalMitigation() {
         streamingEngine.toggleThermalMitigation()
+    }
+
+    fun toggleScreenBlackout() {
+        _screenBlackoutEnabled.value = !_screenBlackoutEnabled.value
     }
 
     fun switchCamera() {

@@ -1,13 +1,19 @@
 package com.reaream.app.ui.stream
 
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -22,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.reaream.app.data.model.AppSettings
 import com.reaream.app.streaming.StreamingEngine
+import kotlinx.coroutines.delay
 import java.util.Locale
 
 @Composable
@@ -31,7 +38,12 @@ fun StreamInfoOverlay(
     modifier: Modifier = Modifier,
     youtubeLiveUrl: String? = null,
     onToggleThermalMitigation: (() -> Unit)? = null,
+    onToggleScreenBlackout: (() -> Unit)? = null,
+    screenBlackoutEnabled: Boolean = false,
 ) {
+    val batteryTemperatureC = rememberBatteryTemperatureCelsius()
+    var showThermalDetails by remember { mutableStateOf(false) }
+
     Column(
         modifier = modifier
             .padding(12.dp)
@@ -68,14 +80,41 @@ fun StreamInfoOverlay(
         }
 
         if (onToggleThermalMitigation != null) {
-            ThermalMitigationChip(
-                enabled = streamState.thermalMitigationEnabled,
-                onClick = onToggleThermalMitigation,
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ThermalMitigationChip(
+                    enabled = streamState.thermalMitigationEnabled,
+                    onClick = onToggleThermalMitigation,
+                )
+                Icon(
+                    imageVector = Icons.Filled.Info,
+                    contentDescription = "Thermal mitigation details",
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clickable { showThermalDetails = true },
+                )
+            }
         }
 
         if (settings.display.showBitrate) {
             InfoText("${streamState.bitrateKbps} kbps")
+        }
+
+        batteryTemperatureC?.let { temp ->
+            val tempColor = when {
+                temp >= 44f -> Color(0xFFFF6B6B)
+                temp >= 40f -> Color(0xFFFFC107)
+                else -> Color.White
+            }
+            Text(
+                text = String.format(Locale.getDefault(), "%.1f°C", temp),
+                color = tempColor,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+            )
         }
 
         if (settings.display.showFps && streamState.fps > 0) {
@@ -137,6 +176,17 @@ fun StreamInfoOverlay(
             )
         }
     }
+
+    if (showThermalDetails) {
+        ThermalDetailsDialog(
+            enabled = streamState.thermalMitigationEnabled,
+            screenBlackoutEnabled = screenBlackoutEnabled,
+            batteryTemperatureC = batteryTemperatureC,
+            onDismiss = { showThermalDetails = false },
+            onToggleThermalMitigation = onToggleThermalMitigation,
+            onToggleScreenBlackout = onToggleScreenBlackout,
+        )
+    }
 }
 
 @Composable
@@ -165,6 +215,88 @@ private fun ThermalMitigationChip(
             fontWeight = FontWeight.Medium,
         )
     }
+}
+
+@Composable
+private fun ThermalDetailsDialog(
+    enabled: Boolean,
+    screenBlackoutEnabled: Boolean,
+    batteryTemperatureC: Float?,
+    onDismiss: () -> Unit,
+    onToggleThermalMitigation: (() -> Unit)?,
+    onToggleScreenBlackout: (() -> Unit)?,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("熱対策の内容") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("現在の熱対策では、配信を止めずに次の負荷を下げます。")
+                Text("・端末プレビューの更新頻度を下げて GPU 負荷を削減")
+                Text("・動画 bitrate を抑えて encoder と通信負荷を削減")
+                Text(
+                    batteryTemperatureC?.let {
+                        String.format(Locale.getDefault(), "端末温度の目安: %.1f°C", it)
+                    } ?: "端末温度は取得できませんでした"
+                )
+                Text(
+                    "完全なバックライト OFF は通常アプリ権限ではできないため、黒画面モードは『最小輝度 + プレビュー黒塗り』で近い状態を作ります。",
+                    fontSize = 13.sp,
+                    color = Color.Gray,
+                )
+
+                if (onToggleThermalMitigation != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("熱対策を有効化")
+                        Switch(
+                            checked = enabled,
+                            onCheckedChange = { onToggleThermalMitigation() },
+                        )
+                    }
+                }
+
+                if (onToggleScreenBlackout != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("黒画面モード")
+                        Switch(
+                            checked = screenBlackoutEnabled,
+                            onCheckedChange = { onToggleScreenBlackout() },
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("閉じる")
+            }
+        },
+    )
+}
+
+@Composable
+private fun rememberBatteryTemperatureCelsius(): Float? {
+    val context = LocalContext.current
+    return produceState<Float?>(initialValue = readBatteryTemperatureCelsius(context), context) {
+        while (true) {
+            value = readBatteryTemperatureCelsius(context)
+            delay(5_000)
+        }
+    }.value
+}
+
+private fun readBatteryTemperatureCelsius(context: android.content.Context): Float? {
+    val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) ?: return null
+    val tempTenths = batteryIntent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
+    return if (tempTenths == Int.MIN_VALUE) null else tempTenths / 10f
 }
 
 @Composable

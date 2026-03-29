@@ -1,5 +1,8 @@
 package com.reaream.app.ui.stream
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.res.Configuration
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
@@ -8,6 +11,7 @@ import android.util.Range
 import android.util.Size
 import android.view.Surface
 import android.view.ViewGroup
+import android.view.WindowManager
 import androidx.annotation.OptIn
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
@@ -60,9 +64,11 @@ fun StreamScreen(
     onSwitchCamera: () -> Unit,
     onOpenSettings: () -> Unit,
     onToggleThermalMitigation: () -> Unit,
+    onToggleScreenBlackout: () -> Unit,
     engine: StreamingEngine,
     modifier: Modifier = Modifier,
     onClearError: () -> Unit = {},
+    screenBlackoutEnabled: Boolean = false,
     currentLocation: android.location.Location? = null,
     currentAddress: String? = null,
     speedKmh: Float = 0f,
@@ -93,6 +99,7 @@ fun StreamScreen(
     var originalWidgets by remember { mutableStateOf<com.reaream.app.data.model.WidgetSettings?>(null) }
     val density = LocalDensity.current.density
     LaunchedEffect(density) { onSetDensity?.invoke(density) }
+    ApplyStreamingScreenBlackout(enabled = streamState.isStreaming && screenBlackoutEnabled)
 
     val currentWidgets = editingWidgets ?: settings.widgets
 
@@ -193,6 +200,14 @@ fun StreamScreen(
                 onUpdateWidgets = ::updateEditingWidgets,
                 onRecheckPermission = onRecheckPermission,
             )
+
+            if (streamState.isStreaming && screenBlackoutEnabled) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(Color.Black),
+                )
+            }
         }
 
         if (!widgetEditMode) {
@@ -213,6 +228,8 @@ fun StreamScreen(
                     onSwitchCamera = onSwitchCamera,
                     onOpenSettings = onOpenSettings,
                     onToggleThermalMitigation = onToggleThermalMitigation,
+                    onToggleScreenBlackout = onToggleScreenBlackout,
+                    screenBlackoutEnabled = screenBlackoutEnabled,
                     onZoomChange = { zoomRatio = it },
                     onEditWidgets = ::toggleWidgetsPanel,
                 )
@@ -233,6 +250,8 @@ fun StreamScreen(
                     onSwitchCamera = onSwitchCamera,
                     onOpenSettings = onOpenSettings,
                     onToggleThermalMitigation = onToggleThermalMitigation,
+                    onToggleScreenBlackout = onToggleScreenBlackout,
+                    screenBlackoutEnabled = screenBlackoutEnabled,
                     onZoomChange = { zoomRatio = it },
                     onEditWidgets = ::toggleWidgetsPanel,
                 )
@@ -526,6 +545,8 @@ private fun LandscapeOverlay(
     onSwitchCamera: () -> Unit,
     onOpenSettings: () -> Unit,
     onToggleThermalMitigation: () -> Unit,
+    onToggleScreenBlackout: () -> Unit,
+    screenBlackoutEnabled: Boolean,
     onZoomChange: (Float) -> Unit,
     onEditWidgets: () -> Unit,
 ) {
@@ -536,6 +557,8 @@ private fun LandscapeOverlay(
                 settings = settings,
                 youtubeLiveUrl = youtubeLiveUrl,
                 onToggleThermalMitigation = onToggleThermalMitigation,
+                onToggleScreenBlackout = onToggleScreenBlackout,
+                screenBlackoutEnabled = screenBlackoutEnabled,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .statusBarsPadding(),
@@ -594,6 +617,8 @@ private fun PortraitOverlay(
     onSwitchCamera: () -> Unit,
     onOpenSettings: () -> Unit,
     onToggleThermalMitigation: () -> Unit,
+    onToggleScreenBlackout: () -> Unit,
+    screenBlackoutEnabled: Boolean,
     onZoomChange: (Float) -> Unit,
     onEditWidgets: () -> Unit,
 ) {
@@ -609,6 +634,8 @@ private fun PortraitOverlay(
                     settings = settings,
                     youtubeLiveUrl = youtubeLiveUrl,
                     onToggleThermalMitigation = onToggleThermalMitigation,
+                    onToggleScreenBlackout = onToggleScreenBlackout,
+                    screenBlackoutEnabled = screenBlackoutEnabled,
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .statusBarsPadding(),
@@ -887,6 +914,33 @@ private fun surfaceRotationToDegrees(rotation: Int): Int = when (rotation) {
     Surface.ROTATION_180 -> 180
     Surface.ROTATION_270 -> 270
     else -> 0
+}
+
+@Composable
+private fun ApplyStreamingScreenBlackout(enabled: Boolean) {
+    val view = LocalView.current
+    DisposableEffect(enabled, view) {
+        val activity = view.context.findActivity()
+        val window = activity?.window
+        if (window == null) {
+            onDispose { }
+        } else {
+            val params = window.attributes
+            params.screenBrightness = if (enabled) 0.01f else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            window.attributes = params
+            onDispose {
+                val restore = window.attributes
+                restore.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                window.attributes = restore
+            }
+        }
+    }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 internal fun shouldUseCompactWidgetEditButtons(
