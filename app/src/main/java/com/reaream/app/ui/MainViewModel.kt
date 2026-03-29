@@ -434,6 +434,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun previewWidgetSettings(widgets: WidgetSettings) {
+        streamingEngine.widgetSettingsRef.set(widgets)
+        val loc = locationProvider.location.value
+        if (loc != null && widgets.mapWidget.enabled) {
+            mapTileProvider.updateLocation(loc, widgets.mapWidget.zoom, widgets.mapWidget.showMarker)
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         stopStreamingResources()

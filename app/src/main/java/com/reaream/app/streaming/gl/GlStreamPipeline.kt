@@ -65,6 +65,7 @@ class GlStreamPipeline(
     private var displayEglSurface: EGLSurface? = null
     @Volatile private var dispW: Int = 0
     @Volatile private var dispH: Int = 0
+    @Volatile private var lastDisplayRenderTimestampNs: Long = Long.MIN_VALUE
 
     // Camera transform state
     @Volatile var cameraRotation: Int = 0
@@ -198,6 +199,7 @@ class GlStreamPipeline(
             displayEglSurface = eglCore.createWindowSurface(surface)
             dispW = width
             dispH = height
+            lastDisplayRenderTimestampNs = Long.MIN_VALUE
             Log.i(TAG, "Display surface attached: ${width}x${height}")
         }
     }
@@ -212,6 +214,7 @@ class GlStreamPipeline(
                 displayEglSurface = null
                 dispW = 0
                 dispH = 0
+                lastDisplayRenderTimestampNs = Long.MIN_VALUE
                 Log.i(TAG, "Display surface detached")
             }
         }
@@ -357,6 +360,7 @@ class GlStreamPipeline(
             null
         }
         val overlayVersion = widgetRenderer.overlayVersion
+        val frameTimestampNs = st.timestamp
 
         if (hasEncoder && encW > 0 && encH > 0) {
             if (overlay == null) {
@@ -365,15 +369,14 @@ class GlStreamPipeline(
             val encoderSurface = encoderEglSurface ?: return
             eglCore.makeCurrent(encoderSurface)
             drawScene(texMatrix, overlay, overlayVersion, encW, encH, cameraRotation, mirror = false)
-            val ts = st.timestamp
             if (baseTimestampNs < 0) {
-                baseTimestampNs = ts
+                baseTimestampNs = frameTimestampNs
             }
             val eglDisplay = eglCore.eglDisplay ?: return
             EGLExt.eglPresentationTimeANDROID(
                 eglDisplay,
                 encoderSurface,
-                (ts - baseTimestampNs).coerceAtLeast(0L),
+                (frameTimestampNs - baseTimestampNs).coerceAtLeast(0L),
             )
             if (eglCore.swapBuffers(encoderSurface)) {
                 framesRendered.incrementAndGet()
@@ -382,12 +385,20 @@ class GlStreamPipeline(
             }
         }
 
-        if (hasDisplay && dispW > 0 && dispH > 0) {
+        val shouldRenderDisplay = hasDisplay && dispW > 0 && dispH > 0 && shouldRenderDisplayFrame(
+            frameTimestampNs = frameTimestampNs,
+            hasEncoder = hasEncoder,
+            lastDisplayRenderTimestampNs = lastDisplayRenderTimestampNs,
+        )
+
+        if (shouldRenderDisplay) {
             val displaySurface = displayEglSurface ?: return
             eglCore.makeCurrent(displaySurface)
             drawScene(texMatrix, null, overlayVersion, dispW, dispH, cameraRotation, mirror = mirrorPreview)
             if (!eglCore.swapBuffers(displaySurface)) {
                 framesDropped.incrementAndGet()
+            } else {
+                lastDisplayRenderTimestampNs = frameTimestampNs
             }
         }
 
@@ -552,6 +563,10 @@ class GlStreamPipeline(
 
     companion object {
         private const val TAG = "GlStreamPipeline"
+        private const val DISPLAY_FPS_WHILE_ENCODING = 30
+        private const val NANOS_PER_SECOND = 1_000_000_000L
+        internal const val DISPLAY_FRAME_INTERVAL_WHILE_ENCODING_NS =
+            NANOS_PER_SECOND / DISPLAY_FPS_WHILE_ENCODING
 
         private val QUAD_POSITIONS = floatArrayOf(
             -1f, -1f,
@@ -608,4 +623,15 @@ class GlStreamPipeline(
             }
         """
     }
+}
+
+internal fun shouldRenderDisplayFrame(
+    frameTimestampNs: Long,
+    hasEncoder: Boolean,
+    lastDisplayRenderTimestampNs: Long,
+): Boolean {
+    if (!hasEncoder) return true
+    if (lastDisplayRenderTimestampNs == Long.MIN_VALUE) return true
+    return frameTimestampNs - lastDisplayRenderTimestampNs >=
+        GlStreamPipeline.DISPLAY_FRAME_INTERVAL_WHILE_ENCODING_NS
 }

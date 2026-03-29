@@ -58,6 +58,7 @@ fun ReareamApp(
                 locationPermissionDenied = locationPermissionDenied,
                 mapBitmap = mapBitmap,
                 onUpdateWidgets = viewModel::updateWidgetSettings,
+                onPreviewWidgets = viewModel::previewWidgetSettings,
                 onRecheckPermission = { viewModel.locationProvider.recheckPermission() },
                 onSetDensity = { viewModel.streamingEngine.widgetRenderer.screenDensity = it },
                 youtubeSetupError = youtubeSetupError,

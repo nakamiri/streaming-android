@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
@@ -36,6 +37,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -66,6 +68,7 @@ fun StreamScreen(
     locationPermissionDenied: Boolean = false,
     mapBitmap: android.graphics.Bitmap? = null,
     onUpdateWidgets: ((com.reaream.app.data.model.WidgetSettings) -> Unit)? = null,
+    onPreviewWidgets: ((com.reaream.app.data.model.WidgetSettings) -> Unit)? = null,
     onRecheckPermission: (() -> Unit)? = null,
     onSetDensity: ((Float) -> Unit)? = null,
     youtubeSetupError: String? = null,
@@ -84,14 +87,71 @@ fun StreamScreen(
     var minZoomRatio by remember { mutableFloatStateOf(1.0f) }
     var maxZoomRatio by remember { mutableFloatStateOf(10.0f) }
     var widgetEditMode by remember { mutableStateOf(false) }
+    var widgetPanelVisible by remember { mutableStateOf(false) }
+    var editingWidgets by remember { mutableStateOf<com.reaream.app.data.model.WidgetSettings?>(null) }
+    var originalWidgets by remember { mutableStateOf<com.reaream.app.data.model.WidgetSettings?>(null) }
     val density = LocalDensity.current.density
     LaunchedEffect(density) { onSetDensity?.invoke(density) }
+
+    val currentWidgets = editingWidgets ?: settings.widgets
+
+    LaunchedEffect(settings.widgets, widgetEditMode, editingWidgets) {
+        if (!widgetEditMode && editingWidgets != null && settings.widgets == editingWidgets) {
+            editingWidgets = null
+        }
+        if (!widgetEditMode && originalWidgets != null && settings.widgets == originalWidgets) {
+            originalWidgets = null
+        }
+    }
+
+    fun beginWidgetEdit() {
+        originalWidgets = settings.widgets
+        editingWidgets = settings.widgets
+        onPreviewWidgets?.invoke(settings.widgets)
+        widgetPanelVisible = false
+        widgetEditMode = true
+    }
+
+    fun updateEditingWidgets(updated: com.reaream.app.data.model.WidgetSettings) {
+        editingWidgets = updated
+        onPreviewWidgets?.invoke(updated)
+    }
+
+    fun finishWidgetEdit() {
+        val finalWidgets = editingWidgets ?: settings.widgets
+        onUpdateWidgets?.invoke(finalWidgets)
+        onPreviewWidgets?.invoke(finalWidgets)
+        editingWidgets = null
+        originalWidgets = null
+        widgetEditMode = false
+    }
+
+    fun cancelWidgetEdit() {
+        val restoredWidgets = originalWidgets ?: settings.widgets
+        onPreviewWidgets?.invoke(restoredWidgets)
+        editingWidgets = null
+        originalWidgets = null
+        widgetEditMode = false
+    }
+
+    fun toggleWidgetsPanel() {
+        widgetPanelVisible = !widgetPanelVisible
+    }
+
+    fun updateWidgetToggles(updated: com.reaream.app.data.model.WidgetSettings) {
+        onPreviewWidgets?.invoke(updated)
+        onUpdateWidgets?.invoke(updated)
+    }
 
     val fallbackWidth = settings.currentStream.resolution.width
     val fallbackHeight = settings.currentStream.resolution.height
     val previewWidth = if (streamState.videoWidth > 0) streamState.videoWidth else fallbackWidth
     val previewHeight = if (streamState.videoHeight > 0) streamState.videoHeight else fallbackHeight
     val safeAspect = computeVideoAspectRatio(previewWidth, previewHeight, isLandscape)
+    val compactEditButtons = shouldUseCompactWidgetEditButtons(
+        isLandscape = isLandscape,
+        screenWidthDp = configuration.screenWidthDp,
+    )
 
     Box(
         modifier = modifier
@@ -122,14 +182,14 @@ fun StreamScreen(
             )
 
             WidgetOverlay(
-                widgetSettings = settings.widgets,
+                widgetSettings = currentWidgets,
                 currentLocation = currentLocation,
                 currentAddress = currentAddress,
                 speedKmh = speedKmh,
                 mapBitmap = mapBitmap,
                 locationPermissionDenied = locationPermissionDenied,
                 isEditMode = widgetEditMode,
-                onUpdateWidgets = onUpdateWidgets,
+                onUpdateWidgets = ::updateEditingWidgets,
                 onRecheckPermission = onRecheckPermission,
             )
         }
@@ -144,7 +204,7 @@ fun StreamScreen(
                     zoomRatio = zoomRatio,
                     minZoomRatio = minZoomRatio,
                     maxZoomRatio = maxZoomRatio,
-                    hasWidgets = settings.widgets.let { it.clockWidget.enabled || it.locationWidget.enabled || it.speedWidget.enabled || it.mapWidget.enabled },
+                    hasWidgets = true,
                     youtubeLiveUrl = youtubeLiveUrl,
                     onToggleStreaming = onToggleStreaming,
                     onToggleMute = onToggleMute,
@@ -152,7 +212,7 @@ fun StreamScreen(
                     onSwitchCamera = onSwitchCamera,
                     onOpenSettings = onOpenSettings,
                     onZoomChange = { zoomRatio = it },
-                    onEditWidgets = { widgetEditMode = true },
+                    onEditWidgets = ::toggleWidgetsPanel,
                 )
             } else {
                 PortraitOverlay(
@@ -163,7 +223,7 @@ fun StreamScreen(
                     zoomRatio = zoomRatio,
                     minZoomRatio = minZoomRatio,
                     maxZoomRatio = maxZoomRatio,
-                    hasWidgets = settings.widgets.let { it.clockWidget.enabled || it.locationWidget.enabled || it.speedWidget.enabled || it.mapWidget.enabled },
+                    hasWidgets = true,
                     youtubeLiveUrl = youtubeLiveUrl,
                     onToggleStreaming = onToggleStreaming,
                     onToggleMute = onToggleMute,
@@ -171,74 +231,130 @@ fun StreamScreen(
                     onSwitchCamera = onSwitchCamera,
                     onOpenSettings = onOpenSettings,
                     onZoomChange = { zoomRatio = it },
-                    onEditWidgets = { widgetEditMode = true },
+                    onEditWidgets = ::toggleWidgetsPanel,
                 )
             }
         }
 
+        if (widgetPanelVisible && !widgetEditMode) {
+            WidgetQuickPanel(
+                widgetSettings = currentWidgets,
+                isLandscape = isLandscape,
+                onUpdateWidgets = ::updateWidgetToggles,
+                onStartEdit = ::beginWidgetEdit,
+                onDismiss = { widgetPanelVisible = false },
+                modifier = Modifier
+                    .align(if (isLandscape) Alignment.BottomCenter else Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = if (isLandscape) 24.dp else 140.dp, start = 16.dp, end = 16.dp),
+            )
+        }
+
         // Widget edit mode buttons (reset/done)
         if (widgetEditMode) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(bottom = 24.dp),
+                    .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
             ) {
-                androidx.compose.material3.Button(
-                    onClick = {
-                        onUpdateWidgets?.invoke(
-                            settings.widgets.copy(
-                                clockWidget = settings.widgets.clockWidget.copy(
-                                    x = com.reaream.app.data.model.ClockWidgetConfig().x,
-                                    y = com.reaream.app.data.model.ClockWidgetConfig().y,
-                                    fontSize = com.reaream.app.data.model.ClockWidgetConfig().fontSize,
-                                ),
-                                locationWidget = settings.widgets.locationWidget.copy(
-                                    x = com.reaream.app.data.model.LocationWidgetConfig().x,
-                                    y = com.reaream.app.data.model.LocationWidgetConfig().y,
-                                    fontSize = com.reaream.app.data.model.LocationWidgetConfig().fontSize,
-                                ),
-                                speedWidget = settings.widgets.speedWidget.copy(
-                                    x = com.reaream.app.data.model.SpeedWidgetConfig().x,
-                                    y = com.reaream.app.data.model.SpeedWidgetConfig().y,
-                                    fontSize = com.reaream.app.data.model.SpeedWidgetConfig().fontSize,
-                                ),
-                                mapWidget = settings.widgets.mapWidget.copy(
-                                    x = com.reaream.app.data.model.MapWidgetConfig().x,
-                                    y = com.reaream.app.data.model.MapWidgetConfig().y,
-                                    sizeDp = com.reaream.app.data.model.MapWidgetConfig().sizeDp,
-                                ),
-                            )
-                        )
-                    },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF666666),
-                        contentColor = Color.White,
-                    ),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Refresh,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("リセット", fontSize = 14.sp)
+                if (compactEditButtons) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 6.dp),
+                    ) {
+                        CompactEditHint(label = "Reset", modifier = Modifier.weight(1f))
+                        CompactEditHint(label = "Cancel", modifier = Modifier.weight(1f))
+                        CompactEditHint(label = "Done", modifier = Modifier.weight(1f))
+                    }
                 }
-                androidx.compose.material3.Button(
-                    onClick = { widgetEditMode = false },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFFFC107),
-                        contentColor = Color.Black,
-                    ),
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Check,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("完了", fontSize = 14.sp)
+                    androidx.compose.material3.Button(
+                        onClick = {
+                            updateEditingWidgets(
+                                currentWidgets.copy(
+                                    clockWidget = currentWidgets.clockWidget.copy(
+                                        x = com.reaream.app.data.model.ClockWidgetConfig().x,
+                                        y = com.reaream.app.data.model.ClockWidgetConfig().y,
+                                        fontSize = com.reaream.app.data.model.ClockWidgetConfig().fontSize,
+                                    ),
+                                    locationWidget = currentWidgets.locationWidget.copy(
+                                        x = com.reaream.app.data.model.LocationWidgetConfig().x,
+                                        y = com.reaream.app.data.model.LocationWidgetConfig().y,
+                                        fontSize = com.reaream.app.data.model.LocationWidgetConfig().fontSize,
+                                    ),
+                                    speedWidget = currentWidgets.speedWidget.copy(
+                                        x = com.reaream.app.data.model.SpeedWidgetConfig().x,
+                                        y = com.reaream.app.data.model.SpeedWidgetConfig().y,
+                                        fontSize = com.reaream.app.data.model.SpeedWidgetConfig().fontSize,
+                                    ),
+                                    mapWidget = currentWidgets.mapWidget.copy(
+                                        x = com.reaream.app.data.model.MapWidgetConfig().x,
+                                        y = com.reaream.app.data.model.MapWidgetConfig().y,
+                                        sizeDp = com.reaream.app.data.model.MapWidgetConfig().sizeDp,
+                                    ),
+                                )
+                            )
+                        },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF666666),
+                            contentColor = Color.White,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Refresh,
+                            contentDescription = "Reset",
+                            modifier = Modifier.size(18.dp),
+                        )
+                        if (!compactEditButtons) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Reset", fontSize = 14.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                        }
+                    }
+                    androidx.compose.material3.Button(
+                        onClick = ::cancelWidgetEdit,
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF444444),
+                            contentColor = Color.White,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "Cancel",
+                            modifier = Modifier.size(18.dp),
+                        )
+                        if (!compactEditButtons) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Cancel", fontSize = 14.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                        }
+                    }
+                    androidx.compose.material3.Button(
+                        onClick = ::finishWidgetEdit,
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFFC107),
+                            contentColor = Color.Black,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = "Done",
+                            modifier = Modifier.size(18.dp),
+                        )
+                        if (!compactEditButtons) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Done", fontSize = 14.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                        }
+                    }
                 }
             }
         }
@@ -764,4 +880,119 @@ private fun surfaceRotationToDegrees(rotation: Int): Int = when (rotation) {
     Surface.ROTATION_180 -> 180
     Surface.ROTATION_270 -> 270
     else -> 0
+}
+
+internal fun shouldUseCompactWidgetEditButtons(
+    isLandscape: Boolean,
+    screenWidthDp: Int,
+): Boolean = !isLandscape && screenWidthDp <= 420
+
+@Composable
+private fun CompactEditHint(
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = label,
+        color = Color.White.copy(alpha = 0.82f),
+        fontSize = 11.sp,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Clip,
+        modifier = modifier.wrapContentWidth(Alignment.CenterHorizontally),
+    )
+}
+
+@Composable
+private fun WidgetQuickPanel(
+    widgetSettings: com.reaream.app.data.model.WidgetSettings,
+    isLandscape: Boolean,
+    onUpdateWidgets: (com.reaream.app.data.model.WidgetSettings) -> Unit,
+    onStartEdit: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    androidx.compose.material3.Card(
+        modifier = modifier,
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = Color(0xE6000000),
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Widgets", color = Color.White, fontSize = 18.sp)
+                androidx.compose.material3.TextButton(onClick = onDismiss) {
+                    Text("閉じる")
+                }
+            }
+
+            WidgetToggleRow(
+                label = "時計",
+                checked = widgetSettings.clockWidget.enabled,
+                onCheckedChange = {
+                    onUpdateWidgets(widgetSettings.copy(clockWidget = widgetSettings.clockWidget.copy(enabled = it)))
+                },
+            )
+            WidgetToggleRow(
+                label = "位置情報",
+                checked = widgetSettings.locationWidget.enabled,
+                onCheckedChange = {
+                    onUpdateWidgets(widgetSettings.copy(locationWidget = widgetSettings.locationWidget.copy(enabled = it)))
+                },
+            )
+            WidgetToggleRow(
+                label = "速度",
+                checked = widgetSettings.speedWidget.enabled,
+                onCheckedChange = {
+                    onUpdateWidgets(widgetSettings.copy(speedWidget = widgetSettings.speedWidget.copy(enabled = it)))
+                },
+            )
+            WidgetToggleRow(
+                label = "地図",
+                checked = widgetSettings.mapWidget.enabled,
+                onCheckedChange = {
+                    onUpdateWidgets(widgetSettings.copy(mapWidget = widgetSettings.mapWidget.copy(enabled = it)))
+                },
+            )
+
+            val hasEnabledWidgets = widgetSettings.clockWidget.enabled ||
+                widgetSettings.locationWidget.enabled ||
+                widgetSettings.speedWidget.enabled ||
+                widgetSettings.mapWidget.enabled
+
+            androidx.compose.material3.Button(
+                onClick = onStartEdit,
+                enabled = hasEnabledWidgets,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (isLandscape) "レイアウト編集" else "配置を編集")
+            }
+        }
+    }
+}
+
+@Composable
+private fun WidgetToggleRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = Color.White)
+        androidx.compose.material3.Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+        )
+    }
 }
