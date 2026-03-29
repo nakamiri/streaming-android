@@ -214,6 +214,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 resolution = resolutionStr,
                 fps = config.fps,
                 existingBroadcastId = existingBroadcastId,
+                latencyPreference = config.youtubeLatency.apiValue,
+                enableAutoStart = config.youtubeAutoStart,
+                enableAutoStop = config.youtubeAutoStop,
             )
 
             result.onSuccess { (broadcastId, ingestion) ->

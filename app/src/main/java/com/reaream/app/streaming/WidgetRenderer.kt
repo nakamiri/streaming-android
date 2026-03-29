@@ -28,6 +28,10 @@ class WidgetRenderer {
     private var overlayBitmap: Bitmap? = null
     private var overlayCanvas: Canvas? = null
 
+    // Accumulated bounding rect of widgets drawn this frame — passed to YuvCompositor
+    // to limit blending to only the regions that actually have pixels.
+    private val dirtyRect = Rect()
+
     private val textPaint by lazy {
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
@@ -58,6 +62,7 @@ class WidgetRenderer {
         val canvas = overlayCanvas ?: return
 
         bitmap.eraseColor(Color.TRANSPARENT)
+        dirtyRect.setEmpty()
 
         if (settings.mapWidget.enabled) {
             drawMap(canvas, width, height, settings.mapWidget)
@@ -75,7 +80,32 @@ class WidgetRenderer {
             drawSpeed(canvas, width, height, settings.speedWidget)
         }
 
-        YuvCompositor.blendOntoI420(bitmap, yuvData, width, height)
+        if (!dirtyRect.isEmpty) {
+            YuvCompositor.blendOntoI420(bitmap, yuvData, width, height, dirtyRect)
+        }
+    }
+
+    /**
+     * Renders widget overlays onto a Bitmap and returns it.
+     * Returns null if no widgets are enabled or none were drawn.
+     * Called from the GL thread — no YUV compositing.
+     */
+    fun renderOverlayBitmap(width: Int, height: Int, settings: WidgetSettings): Bitmap? {
+        if (!settings.clockWidget.enabled && !settings.locationWidget.enabled
+            && !settings.speedWidget.enabled && !settings.mapWidget.enabled) return null
+
+        val bitmap = ensureBitmap(width, height)
+        val canvas = overlayCanvas ?: return null
+
+        bitmap.eraseColor(Color.TRANSPARENT)
+        dirtyRect.setEmpty()
+
+        if (settings.mapWidget.enabled) drawMap(canvas, width, height, settings.mapWidget)
+        if (settings.clockWidget.enabled) drawClock(canvas, width, height, settings.clockWidget)
+        if (settings.locationWidget.enabled) drawLocation(canvas, width, height, settings.locationWidget)
+        if (settings.speedWidget.enabled) drawSpeed(canvas, width, height, settings.speedWidget)
+
+        return if (!dirtyRect.isEmpty) bitmap else null
     }
 
     private fun drawClock(canvas: Canvas, w: Int, h: Int, config: ClockWidgetConfig) {
@@ -115,7 +145,6 @@ class WidgetRenderer {
 
         val dst = RectF(x, y, x + mapSize, y + mapSize)
 
-        // Draw rounded rect background
         val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             style = Paint.Style.STROKE
@@ -129,6 +158,8 @@ class WidgetRenderer {
         canvas.drawBitmap(mapBmp, null, dst, null)
         canvas.restore()
         canvas.drawRoundRect(dst, 12f, 12f, borderPaint)
+
+        dirtyRect.union(dst.left.toInt(), dst.top.toInt(), dst.right.toInt() + 1, dst.bottom.toInt() + 1)
     }
 
     private fun drawTextWidget(canvas: Canvas, w: Int, h: Int, text: String, xPct: Float, yPct: Float, fontSize: Int) {
@@ -148,6 +179,8 @@ class WidgetRenderer {
         val bgRect = RectF(x, y, x + bgW, y + bgH)
         canvas.drawRoundRect(bgRect, 8f, 8f, bgPaint)
         canvas.drawText(text, x + textPadding, y + textPadding + textH, textPaint)
+
+        dirtyRect.union(x.toInt(), y.toInt(), (x + bgW).toInt() + 1, (y + bgH).toInt() + 1)
     }
 
     private fun ensureBitmap(width: Int, height: Int): Bitmap {

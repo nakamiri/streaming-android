@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.reaream.app.data.model.AppSettings
+import com.reaream.app.data.model.AuthType
 import com.reaream.app.ui.Screen
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,7 +53,12 @@ fun StreamSettingsScreen(
                 ListItem(
                     headlineContent = { Text(stream.name) },
                     supportingContent = {
-                        Text("${stream.protocol.displayName} - ${stream.resolution.displayName} @ ${stream.fps}fps")
+                        if (stream.authType == AuthType.YOUTUBE_OAUTH) {
+                            val channel = stream.youtubeChannelName.ifBlank { "YouTube OAuth" }
+                            Text("YouTube – $channel / ${stream.resolution.displayName} @ ${stream.fps}fps")
+                        } else {
+                            Text("${stream.protocol.displayName} - ${stream.resolution.displayName} @ ${stream.fps}fps")
+                        }
                     },
                     leadingContent = {
                         RadioButton(

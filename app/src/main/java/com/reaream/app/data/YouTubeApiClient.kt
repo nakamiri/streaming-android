@@ -87,6 +87,9 @@ class YouTubeApiClient(private val authManager: YouTubeAuthManager) {
     suspend fun createBroadcast(
         title: String,
         privacyStatus: String,
+        latencyPreference: String = "normal",
+        enableAutoStart: Boolean = true,
+        enableAutoStop: Boolean = true,
     ): Result<String> = apiCall {
         val token = getToken()
         val requestBody = buildJsonObject {
@@ -99,8 +102,9 @@ class YouTubeApiClient(private val authManager: YouTubeAuthManager) {
                 put("selfDeclaredMadeForKids", JsonPrimitive(false))
             })
             put("contentDetails", buildJsonObject {
-                put("enableAutoStart", JsonPrimitive(true))
-                put("enableAutoStop", JsonPrimitive(true))
+                put("latencyPreference", latencyPreference)
+                put("enableAutoStart", JsonPrimitive(enableAutoStart))
+                put("enableAutoStop", JsonPrimitive(enableAutoStop))
             })
         }.toString()
 
@@ -208,6 +212,9 @@ class YouTubeApiClient(private val authManager: YouTubeAuthManager) {
         resolution: String,
         fps: Int = 30,
         existingBroadcastId: String? = null,
+        latencyPreference: String = "normal",
+        enableAutoStart: Boolean = true,
+        enableAutoStop: Boolean = true,
     ): Result<Pair<String, StreamIngestion>> {
         // For existing broadcasts, get the already-bound stream's ingestion info
         if (existingBroadcastId != null) {
@@ -218,7 +225,9 @@ class YouTubeApiClient(private val authManager: YouTubeAuthManager) {
         }
 
         // New broadcast: create broadcast, stream, and bind
-        val broadcastId = createBroadcast(title, privacyStatus).getOrElse {
+        val broadcastId = createBroadcast(
+            title, privacyStatus, latencyPreference, enableAutoStart, enableAutoStop
+        ).getOrElse {
             return Result.failure(it)
         }
 

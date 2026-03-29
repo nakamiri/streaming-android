@@ -1,14 +1,10 @@
 package com.reaream.app.ui.stream
 
 import android.content.res.Configuration
-import android.util.Size
 import android.view.ViewGroup
 import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -34,8 +30,6 @@ import androidx.core.content.ContextCompat
 import com.reaream.app.data.model.AppSettings
 import com.reaream.app.streaming.StreamingEngine
 import com.reaream.app.chat.ChatMessage
-import java.nio.ByteBuffer
-import java.util.concurrent.Executors
 
 @Composable
 fun StreamScreen(
@@ -49,9 +43,7 @@ fun StreamScreen(
     onSwitchCamera: () -> Unit,
     onOpenSettings: () -> Unit,
     onClearError: () -> Unit = {},
-    onVideoFrame: ((ByteBuffer, Int, Int, Long) -> Unit)? = null,
-    videoWidth: Int = 1280,
-    videoHeight: Int = 720,
+    engine: StreamingEngine,
     currentLocation: android.location.Location? = null,
     currentAddress: String? = null,
     speedKmh: Float = 0f,
@@ -87,13 +79,11 @@ fun StreamScreen(
     ) {
         // Camera Preview
         CameraPreview(
+            engine = engine,
             useFrontCamera = settings.camera.useFrontCamera,
             torchEnabled = torchEnabled,
             zoomRatio = zoomRatio,
-            onVideoFrame = onVideoFrame,
-            videoWidth = videoWidth,
-            videoHeight = videoHeight,
-            isLandscape = isLandscape,
+            fps = settings.currentStream.fps,
             onCameraZoomRange = { min, max ->
                 minZoomRatio = min
                 maxZoomRatio = max
@@ -148,16 +138,22 @@ fun StreamScreen(
         // Widget overlay — constrained to the same aspect ratio as the video frame
         // so that widget positions (x/y fractions) match between the UI and the encoded stream.
         val videoAspectRatio = if (isLandscape) {
-            maxOf(videoWidth, videoHeight).toFloat() / minOf(videoWidth, videoHeight).toFloat()
+            maxOf(streamState.videoWidth, streamState.videoHeight).toFloat() /
+                minOf(streamState.videoWidth, streamState.videoHeight).toFloat().coerceAtLeast(1f)
         } else {
-            minOf(videoWidth, videoHeight).toFloat() / maxOf(videoWidth, videoHeight).toFloat()
+            minOf(streamState.videoWidth, streamState.videoHeight).toFloat() /
+                maxOf(streamState.videoWidth, streamState.videoHeight).toFloat().coerceAtLeast(1f)
         }
+        val safeAspect = if (videoAspectRatio.isNaN() || videoAspectRatio <= 0f) {
+            if (isLandscape) 16f / 9f else 9f / 16f
+        } else videoAspectRatio
+
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
                 .then(
-                    if (isLandscape) Modifier.fillMaxHeight().aspectRatio(videoAspectRatio)
-                    else Modifier.fillMaxWidth().aspectRatio(videoAspectRatio)
+                    if (isLandscape) Modifier.fillMaxHeight().aspectRatio(safeAspect)
+                    else Modifier.fillMaxWidth().aspectRatio(safeAspect)
                 ),
         ) {
             WidgetOverlay(
@@ -527,18 +523,17 @@ private fun PortraitOverlay(
 
 @Composable
 fun CameraPreview(
+    engine: StreamingEngine,
     useFrontCamera: Boolean,
     torchEnabled: Boolean,
     zoomRatio: Float = 1.0f,
-    onVideoFrame: ((ByteBuffer, Int, Int, Long) -> Unit)? = null,
-    videoWidth: Int = 1280,
-    videoHeight: Int = 720,
-    isLandscape: Boolean = false,
+    fps: Int = 30,
     onCameraZoomRange: ((minZoom: Float, maxZoom: Float) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val glPipeline = engine.glPipeline
 
     val cameraSelector = if (useFrontCamera) {
         CameraSelector.DEFAULT_FRONT_CAMERA
@@ -546,178 +541,82 @@ fun CameraPreview(
         CameraSelector.DEFAULT_BACK_CAMERA
     }
 
-    val previewView = remember {
-        PreviewView(context).apply {
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-            )
-            scaleType = PreviewView.ScaleType.FIT_CENTER
-            implementationMode = PreviewView.ImplementationMode.PERFORMANCE
-        }
-    }
-
-    val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
-
     var cameraInstance by remember { mutableStateOf<androidx.camera.core.Camera?>(null) }
 
     LaunchedEffect(zoomRatio) {
         cameraInstance?.cameraControl?.setZoomRatio(zoomRatio)
     }
 
-    DisposableEffect(cameraSelector, torchEnabled) {
+    DisposableEffect(cameraSelector, torchEnabled, fps) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
             try {
                 cameraProvider.unbindAll()
 
-                if (onVideoFrame != null) {
-                    val targetRotation = if (isLandscape) android.view.Surface.ROTATION_90 else android.view.Surface.ROTATION_0
-                    // ResolutionStrategy size must be in the device's natural orientation (portrait = short x long)
-                    val shortSide = minOf(videoWidth, videoHeight)
-                    val longSide = maxOf(videoWidth, videoHeight)
-                    val resolutionSelector = androidx.camera.core.resolutionselector.ResolutionSelector.Builder()
-                        .setResolutionStrategy(
-                            androidx.camera.core.resolutionselector.ResolutionStrategy(
-                                Size(shortSide, longSide),
-                                androidx.camera.core.resolutionselector.ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
+                val preview = Preview.Builder().also { builder ->
+                    // Request 60fps via Camera2Interop if configured
+                    if (fps >= 60) {
+                        androidx.camera.camera2.interop.Camera2Interop.Extender(builder)
+                            .setCaptureRequestOption(
+                                android.hardware.camera2.CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
+                                android.util.Range(60, 60),
                             )
-                        )
-                        .setAspectRatioStrategy(
-                            androidx.camera.core.resolutionselector.AspectRatioStrategy(
-                                androidx.camera.core.AspectRatio.RATIO_16_9,
-                                androidx.camera.core.resolutionselector.AspectRatioStrategy.FALLBACK_RULE_AUTO,
-                            )
-                        )
-                        .build()
-                    val preview = Preview.Builder()
-                        .setResolutionSelector(resolutionSelector)
-                        .build().also {
-                            it.surfaceProvider = previewView.surfaceProvider
-                        }
-                    val imageAnalysis = ImageAnalysis.Builder()
-                        .setResolutionSelector(resolutionSelector)
-                        .setTargetRotation(targetRotation)
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-                        .build()
-                        .also { analysis ->
-                            var frameCount = 0
-                            analysis.setAnalyzer(analysisExecutor) { imageProxy ->
-                                val srcW = imageProxy.width
-                                val srcH = imageProxy.height
-                                val rotation = imageProxy.imageInfo.rotationDegrees
-                                if (frameCount++ == 0) {
-                                    android.util.Log.d("CameraPreview", "First frame: src=${srcW}x${srcH}, rotation=$rotation")
-                                }
-                                val yuv = imageProxyToYuv420(imageProxy)
-                                val timestampUs = imageProxy.imageInfo.timestamp / 1000
-                                imageProxy.close()
-
-                                val frame = com.reaream.app.streaming.YuvUtils.rotateI420(yuv, srcW, srcH, rotation)
-                                if (frameCount == 1) {
-                                    android.util.Log.d("CameraPreview", "After rotate: ${frame.width}x${frame.height}")
-                                }
-                                onVideoFrame(ByteBuffer.wrap(frame.data), frame.width, frame.height, timestampUs)
-                            }
-                        }
-
-                    val camera = cameraProvider.bindToLifecycle(
-                        lifecycleOwner,
-                        cameraSelector,
-                        preview,
-                        imageAnalysis,
-                    )
-                    camera.cameraControl.enableTorch(torchEnabled)
-                    camera.cameraControl.setZoomRatio(zoomRatio)
-                    cameraInstance = camera
-                    camera.cameraInfo.zoomState.value?.let { zs ->
-                        onCameraZoomRange?.invoke(zs.minZoomRatio, zs.maxZoomRatio)
                     }
-                } else {
-                    val preview = Preview.Builder().build().also {
-                        it.surfaceProvider = previewView.surfaceProvider
-                    }
-                    val camera = cameraProvider.bindToLifecycle(
-                        lifecycleOwner,
-                        cameraSelector,
-                        preview,
-                    )
-                    camera.cameraControl.enableTorch(torchEnabled)
-                    camera.cameraControl.setZoomRatio(zoomRatio)
-                    cameraInstance = camera
-                    camera.cameraInfo.zoomState.value?.let { zs ->
-                        onCameraZoomRange?.invoke(zs.minZoomRatio, zs.maxZoomRatio)
+                }.build()
+
+                preview.setSurfaceProvider(glPipeline.glExecutor) { request ->
+                    val size = request.resolution
+                    val surface = glPipeline.prepareCameraSurface(size.width, size.height)
+                    if (surface != null) {
+                        request.setTransformationInfoListener(glPipeline.glExecutor) { info ->
+                            glPipeline.cameraRotation = info.rotationDegrees
+                            glPipeline.cameraMirroring = info.isMirroring
+                        }
+                        request.provideSurface(surface, glPipeline.glExecutor) { /* released */ }
+                    } else {
+                        request.willNotProvideSurface()
                     }
                 }
+
+                val camera = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview)
+                camera.cameraControl.enableTorch(torchEnabled)
+                camera.cameraControl.setZoomRatio(zoomRatio)
+                cameraInstance = camera
+                camera.cameraInfo.zoomState.value?.let { zs ->
+                    onCameraZoomRange?.invoke(zs.minZoomRatio, zs.maxZoomRatio)
+                }
             } catch (e: Exception) {
-                // Camera binding failed
+                android.util.Log.e("CameraPreview", "Camera binding failed", e)
             }
         }, ContextCompat.getMainExecutor(context))
 
         onDispose {
-            val cameraProvider = try {
-                ProcessCameraProvider.getInstance(context).get()
-            } catch (e: Exception) {
-                null
-            }
-            cameraProvider?.unbindAll()
+            try { ProcessCameraProvider.getInstance(context).get().unbindAll() } catch (_: Exception) {}
         }
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            analysisExecutor.shutdown()
-        }
-    }
-
+    // SurfaceView for GL rendering output (live camera preview on screen)
     AndroidView(
-        factory = { previewView },
+        factory = { ctx ->
+            android.view.SurfaceView(ctx).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                )
+                holder.addCallback(object : android.view.SurfaceHolder.Callback {
+                    override fun surfaceCreated(holder: android.view.SurfaceHolder) {}
+                    override fun surfaceChanged(
+                        holder: android.view.SurfaceHolder, format: Int, width: Int, height: Int
+                    ) {
+                        glPipeline.attachDisplaySurface(holder.surface, width, height)
+                    }
+                    override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
+                        glPipeline.detachDisplaySurface()
+                    }
+                })
+            }
+        },
         modifier = modifier,
     )
 }
-
-private fun imageProxyToYuv420(image: ImageProxy): ByteArray {
-    val yPlane = image.planes[0]
-    val uPlane = image.planes[1]
-    val vPlane = image.planes[2]
-    val width = image.width
-    val height = image.height
-    val uvHeight = height / 2
-    val uvWidth = width / 2
-
-    // I420 format: Y plane, then U plane, then V plane (all separate)
-    val yuv = ByteArray(width * height * 3 / 2)
-
-    // Copy Y plane
-    val yBuffer = yPlane.buffer.duplicate()
-    val yRowStride = yPlane.rowStride
-    var offset = 0
-    for (row in 0 until height) {
-        yBuffer.position(row * yRowStride)
-        yBuffer.get(yuv, offset, width)
-        offset += width
-    }
-
-    // Copy U plane
-    val uBuffer = uPlane.buffer.duplicate()
-    val uvPixelStride = uPlane.pixelStride
-    val uvRowStride = uPlane.rowStride
-    for (row in 0 until uvHeight) {
-        for (col in 0 until uvWidth) {
-            yuv[offset++] = uBuffer.get(row * uvRowStride + col * uvPixelStride)
-        }
-    }
-
-    // Copy V plane
-    val vBuffer = vPlane.buffer.duplicate()
-    for (row in 0 until uvHeight) {
-        for (col in 0 until uvWidth) {
-            yuv[offset++] = vBuffer.get(row * vPlane.rowStride + col * vPlane.pixelStride)
-        }
-    }
-
-    return yuv
-}
-
