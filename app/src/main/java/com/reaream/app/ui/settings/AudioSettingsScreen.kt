@@ -10,7 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.reaream.app.data.model.AudioSettings
-import com.reaream.app.ui.Screen
+import com.reaream.app.data.model.AudioInputMode
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -39,11 +39,52 @@ fun AudioSettingsScreen(
                 .verticalScroll(rememberScrollState()),
         ) {
             SwitchItem(
-                title = "Mute Microphone",
-                subtitle = "Mute audio input",
+                title = "Mute Audio",
+                subtitle = "Mute the current audio source",
                 checked = audio.muted,
                 onCheckedChange = { onUpdate(audio.copy(muted = it)) },
             )
+
+            ListItem(
+                headlineContent = { Text("Audio Source") },
+                supportingContent = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(audio.inputMode.displayName)
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            AudioInputMode.entries.forEachIndexed { index, mode ->
+                                SegmentedButton(
+                                    selected = audio.inputMode == mode,
+                                    onClick = { onUpdate(audio.copy(inputMode = mode)) },
+                                    shape = SegmentedButtonDefaults.itemShape(
+                                        index = index,
+                                        count = AudioInputMode.entries.size,
+                                    ),
+                                ) {
+                                    Text(mode.displayName)
+                                }
+                            }
+                        }
+                    }
+                },
+            )
+
+            if (audio.inputMode == AudioInputMode.TEST_TONE) {
+                ListItem(
+                    headlineContent = { Text("Test Tone Frequency") },
+                    supportingContent = {
+                        Column {
+                            Text("${audio.toneFrequencyHz} Hz")
+                            Slider(
+                                value = audio.toneFrequencyHz.toFloat(),
+                                onValueChange = {
+                                    onUpdate(audio.copy(toneFrequencyHz = it.toInt()))
+                                },
+                                valueRange = 220f..2000f,
+                            )
+                        }
+                    },
+                )
+            }
 
             ListItem(
                 headlineContent = { Text("Audio Gain") },

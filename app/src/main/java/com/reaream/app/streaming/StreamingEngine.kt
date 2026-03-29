@@ -58,9 +58,11 @@ class StreamingEngine {
     private var currentConfig: StreamConfig? = null
     private var videoOutputJob: Job? = null
     private var statsJob: Job? = null
+    private val pendingAudioPcm = PcmFrameBuffer(AUDIO_AAC_FRAME_BYTES)
 
     private var startTimeNanos: Long = 0L
     private var baseAudioTimestampUs: Long = -1L
+    private var pendingAudioPresentationTimeUs: Long = 0L
     private val totalBytesSent = AtomicLong(0L)
 
     private var poorQualityStreak: Int = 0
@@ -204,28 +206,9 @@ class StreamingEngine {
         val relativeUs = presentationTimeUs - baseAudioTimestampUs
         try {
             audioEncoder?.let { encoder ->
-                val inputIndex = encoder.dequeueInputBuffer(0)
-                if (inputIndex >= 0) {
-                    val inputBuffer = encoder.getInputBuffer(inputIndex) ?: return
-                    inputBuffer.clear()
-                    val size = minOf(buffer.size, inputBuffer.remaining())
-                    inputBuffer.put(buffer, 0, size)
-                    encoder.queueInputBuffer(inputIndex, 0, size, relativeUs, 0)
-                }
-
-                val info = MediaCodec.BufferInfo()
-                var outputIndex = encoder.dequeueOutputBuffer(info, 0)
-                while (outputIndex >= 0) {
-                    val outputBuffer = encoder.getOutputBuffer(outputIndex)
-                    if (outputBuffer != null && info.size > 0) {
-                        val data = copyOutputBuffer(outputBuffer, info)
-                        if (connection?.sendAudio(data, info.presentationTimeUs, info.flags) == true) {
-                            totalBytesSent.addAndGet(data.size.toLong())
-                        }
-                    }
-                    encoder.releaseOutputBuffer(outputIndex, false)
-                    outputIndex = encoder.dequeueOutputBuffer(info, 0)
-                }
+                bufferAudioPcm(buffer, relativeUs)
+                drainAudioEncoderInput(encoder)
+                drainAudioEncoderOutput(encoder)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error encoding audio", e)
@@ -433,6 +416,49 @@ class StreamingEngine {
         return ByteArray(info.size).also { dup.get(it) }
     }
 
+    private fun bufferAudioPcm(buffer: ByteArray, relativeUs: Long) {
+        if (pendingAudioPcm.isEmpty()) {
+            pendingAudioPresentationTimeUs = relativeUs
+        }
+        pendingAudioPcm.append(buffer)
+    }
+
+    private fun drainAudioEncoderInput(encoder: MediaCodec) {
+        while (pendingAudioPcm.hasCompleteFrame()) {
+            val inputIndex = encoder.dequeueInputBuffer(0)
+            if (inputIndex < 0) break
+
+            val inputBuffer = encoder.getInputBuffer(inputIndex) ?: break
+            val frame = pendingAudioPcm.takeFrame() ?: break
+            inputBuffer.clear()
+            inputBuffer.put(frame)
+            encoder.queueInputBuffer(
+                inputIndex,
+                0,
+                frame.size,
+                pendingAudioPresentationTimeUs,
+                0,
+            )
+            pendingAudioPresentationTimeUs += audioSamplesToDurationUs(AUDIO_AAC_SAMPLES_PER_FRAME)
+        }
+    }
+
+    private fun drainAudioEncoderOutput(encoder: MediaCodec) {
+        val info = MediaCodec.BufferInfo()
+        var outputIndex = encoder.dequeueOutputBuffer(info, 0)
+        while (outputIndex >= 0) {
+            val outputBuffer = encoder.getOutputBuffer(outputIndex)
+            if (outputBuffer != null && info.size > 0) {
+                val data = copyOutputBuffer(outputBuffer, info)
+                if (connection?.sendAudio(data, info.presentationTimeUs, info.flags) == true) {
+                    totalBytesSent.addAndGet(data.size.toLong())
+                }
+            }
+            encoder.releaseOutputBuffer(outputIndex, false)
+            outputIndex = encoder.dequeueOutputBuffer(info, 0)
+        }
+    }
+
     private fun setupAudioEncoder(config: StreamConfig) {
         val audioFormat = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, 44100, 1).apply {
             setInteger(MediaFormat.KEY_BIT_RATE, config.audioBitrate * 1000)
@@ -493,6 +519,8 @@ class StreamingEngine {
         audioEncoder = null
 
         baseAudioTimestampUs = -1L
+        pendingAudioPresentationTimeUs = 0L
+        pendingAudioPcm.clear()
         poorQualityStreak = 0
         goodQualityStreak = 0
         configuredBitrateKbps = 0
@@ -673,7 +701,68 @@ class StreamingEngine {
         private const val TAG = "StreamingEngine"
         private const val NORMAL_PREVIEW_FPS_WHILE_ENCODING = 30
         private const val THERMAL_PREVIEW_FPS_WHILE_ENCODING = 15
+        private const val AUDIO_SAMPLE_RATE = 44_100
+        private const val AUDIO_PCM_BYTES_PER_SAMPLE = 2
+        private const val AUDIO_AAC_SAMPLES_PER_FRAME = 1024
+        private const val AUDIO_AAC_FRAME_BYTES = AUDIO_AAC_SAMPLES_PER_FRAME * AUDIO_PCM_BYTES_PER_SAMPLE
     }
+}
+
+internal class PcmFrameBuffer(
+    private val frameSize: Int,
+) {
+    private var data = ByteArray(frameSize * 4)
+    private var start = 0
+    private var size = 0
+
+    fun isEmpty(): Boolean = size == 0
+
+    fun hasCompleteFrame(): Boolean = size >= frameSize
+
+    fun append(bytes: ByteArray) {
+        ensureCapacity(size + bytes.size)
+        bytes.copyInto(data, start + size)
+        size += bytes.size
+    }
+
+    fun takeFrame(): ByteArray? {
+        if (!hasCompleteFrame()) return null
+        val frame = ByteArray(frameSize)
+        if (start + frameSize <= data.size) {
+            data.copyInto(frame, 0, start, start + frameSize)
+        }
+        start += frameSize
+        size -= frameSize
+        if (size == 0) {
+            start = 0
+        } else if (start >= data.size / 2) {
+            data.copyInto(data, 0, start, start + size)
+            start = 0
+        }
+        return frame
+    }
+
+    fun clear() {
+        start = 0
+        size = 0
+    }
+
+    private fun ensureCapacity(required: Int) {
+        if (start > 0 && start + required > data.size) {
+            data.copyInto(data, 0, start, start + size)
+            start = 0
+        }
+        if (start + required <= data.size) return
+
+        val newData = ByteArray(maxOf(required, data.size * 2))
+        if (size > 0) data.copyInto(newData, 0, start, start + size)
+        data = newData
+        start = 0
+    }
+}
+
+internal fun audioSamplesToDurationUs(samples: Int): Long {
+    return samples * 1_000_000L / 44_100L
 }
 
 internal fun resolveRequestedVideoBitrateKbps(

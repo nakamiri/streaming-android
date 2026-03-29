@@ -189,4 +189,37 @@ class StreamingEngineTest {
             )
         )
     }
+
+    @Test
+    fun `pcm frame buffer keeps partial data until full frame is available`() {
+        val buffer = PcmFrameBuffer(frameSize = 4)
+
+        buffer.append(byteArrayOf(1, 2))
+        assertFalse(buffer.hasCompleteFrame())
+
+        buffer.append(byteArrayOf(3, 4, 5, 6))
+
+        assertArrayEquals(byteArrayOf(1, 2, 3, 4), buffer.takeFrame())
+        assertFalse(buffer.isEmpty())
+        assertFalse(buffer.hasCompleteFrame())
+    }
+
+    @Test
+    fun `pcm frame buffer preserves order across compaction`() {
+        val buffer = PcmFrameBuffer(frameSize = 4)
+
+        buffer.append(byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8))
+        assertArrayEquals(byteArrayOf(1, 2, 3, 4), buffer.takeFrame())
+
+        buffer.append(byteArrayOf(9, 10, 11, 12))
+
+        assertArrayEquals(byteArrayOf(5, 6, 7, 8), buffer.takeFrame())
+        assertArrayEquals(byteArrayOf(9, 10, 11, 12), buffer.takeFrame())
+        assertTrue(buffer.isEmpty())
+    }
+
+    @Test
+    fun `audio frame duration matches 1024 samples at 44 point 1khz`() {
+        assertEquals(23_219L, audioSamplesToDurationUs(1024))
+    }
 }

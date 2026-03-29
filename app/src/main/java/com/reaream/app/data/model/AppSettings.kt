@@ -30,7 +30,15 @@ data class CameraSettings(
 data class AudioSettings(
     val muted: Boolean = false,
     val gain: Float = 1f,
+    val inputMode: AudioInputMode = AudioInputMode.MICROPHONE,
+    val toneFrequencyHz: Int = 1000,
 )
+
+@Serializable
+enum class AudioInputMode(val displayName: String) {
+    MICROPHONE("Microphone"),
+    TEST_TONE("Test Tone"),
+}
 
 @Serializable
 data class DisplaySettings(

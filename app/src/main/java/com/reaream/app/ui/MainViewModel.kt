@@ -86,6 +86,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             settings.collect { s ->
                 streamingEngine.widgetSettingsRef.set(s.widgets)
+                audioCapture.isMuted = s.audio.muted
+                audioCapture.gain = s.audio.gain
+                audioCapture.inputMode = s.audio.inputMode
+                audioCapture.toneFrequencyHz = s.audio.toneFrequencyHz
 
                 // Start/stop location updates based on widget config
                 if (s.widgets.locationWidget.enabled || s.widgets.speedWidget.enabled || s.widgets.mapWidget.enabled) {
@@ -266,8 +270,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         // Start audio capture
         audioCapture.isMuted = settings.value.audio.muted
+        audioCapture.gain = settings.value.audio.gain
+        audioCapture.inputMode = settings.value.audio.inputMode
+        audioCapture.toneFrequencyHz = settings.value.audio.toneFrequencyHz
         if (!audioCapture.start(context)) {
-            streamingEngine.showError("マイク権限または初期化に失敗したため、配信を開始できません。")
+            streamingEngine.showError("音声入力の初期化に失敗したため、配信を開始できません。")
             return
         }
 
