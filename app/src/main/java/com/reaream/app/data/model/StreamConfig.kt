@@ -20,6 +20,9 @@ data class StreamConfig(
     val youtubeChannelName: String = "",
     val youtubeBroadcastTitle: String = "",
     val youtubePrivacy: YouTubePrivacy = YouTubePrivacy.UNLISTED,
+    val youtubeLatency: YouTubeLatency = YouTubeLatency.NORMAL,
+    val youtubeAutoStart: Boolean = true,
+    val youtubeAutoStop: Boolean = true,
 )
 
 @Serializable
@@ -33,6 +36,13 @@ enum class YouTubePrivacy(val apiValue: String, val displayName: String) {
     PUBLIC("public", "公開"),
     UNLISTED("unlisted", "限定公開"),
     PRIVATE("private", "非公開"),
+}
+
+@Serializable
+enum class YouTubeLatency(val apiValue: String, val displayName: String, val description: String) {
+    NORMAL("normal", "通常", "安定性重視・遅延15〜30秒"),
+    LOW("low", "低遅延", "遅延7〜15秒"),
+    ULTRA_LOW("ultraLow", "超低遅延", "遅延2〜7秒・高ビットレート非対応"),
 }
 
 @Serializable

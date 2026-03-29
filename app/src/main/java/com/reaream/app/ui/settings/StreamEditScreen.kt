@@ -1,6 +1,5 @@
 package com.reaream.app.ui.settings
 
-import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -17,8 +16,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.net.Uri
 import com.reaream.app.data.YouTubeAuthManager
 import com.reaream.app.data.model.*
+import com.reaream.app.ui.Screen
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 
@@ -46,6 +47,10 @@ fun StreamEditScreen(
     var videoCodec by remember(stream) { mutableStateOf(stream.videoCodec) }
     var srtLatency by remember(stream) { mutableStateOf(stream.srtLatency.toString()) }
     var adaptiveBitrate by remember(stream) { mutableStateOf(stream.adaptiveBitrate) }
+    // YouTube Live settings
+    var youtubeLatency by remember(stream) { mutableStateOf(stream.youtubeLatency) }
+    var youtubeAutoStart by remember(stream) { mutableStateOf(stream.youtubeAutoStart) }
+    var youtubeAutoStop by remember(stream) { mutableStateOf(stream.youtubeAutoStop) }
 
     // YouTube OAuth state (only relevant when authType == YOUTUBE_OAUTH)
     var channelName by remember { mutableStateOf(youtubeAuthManager?.getChannelName() ?: stream.youtubeChannelName) }
@@ -81,7 +86,7 @@ fun StreamEditScreen(
                     TextButton(onClick = {
                         onSave(
                             streamIndex,
-                            StreamConfig(
+                            stream.copy(
                                 name = name,
                                 url = url,
                                 streamKey = streamKey,
@@ -97,6 +102,9 @@ fun StreamEditScreen(
                                 youtubeChannelName = channelName,
                                 youtubeBroadcastTitle = stream.youtubeBroadcastTitle,
                                 youtubePrivacy = stream.youtubePrivacy,
+                                youtubeLatency = youtubeLatency,
+                                youtubeAutoStart = youtubeAutoStart,
+                                youtubeAutoStop = youtubeAutoStop,
                             )
                         )
                         onBack()
@@ -360,6 +368,57 @@ fun StreamEditScreen(
                         fontSize = 12.sp,
                     )
                 }
+            }
+
+            // YouTube Live settings (OAuth streams only)
+            if (stream.authType == AuthType.YOUTUBE_OAUTH) {
+                HorizontalDivider()
+
+                Text("YouTube Live 設定", style = MaterialTheme.typography.labelLarge)
+
+                Text("配信遅延", style = MaterialTheme.typography.labelMedium)
+                YouTubeLatency.entries.forEach { mode ->
+                    val isSelected = youtubeLatency == mode
+                    Card(
+                        onClick = { youtubeLatency = mode },
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surfaceVariant,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            RadioButton(selected = isSelected, onClick = { youtubeLatency = mode })
+                            Column {
+                                Text(mode.displayName, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    mode.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                ListItem(
+                    headlineContent = { Text("自動スタート") },
+                    supportingContent = { Text("接続後に配信を自動で開始する") },
+                    trailingContent = {
+                        Switch(checked = youtubeAutoStart, onCheckedChange = { youtubeAutoStart = it })
+                    },
+                )
+                ListItem(
+                    headlineContent = { Text("自動ストップ") },
+                    supportingContent = { Text("接続が切れたら配信を自動で終了する") },
+                    trailingContent = {
+                        Switch(checked = youtubeAutoStop, onCheckedChange = { youtubeAutoStop = it })
+                    },
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
