@@ -27,6 +27,7 @@ permissions:
 
 jobs:
   manual-build:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
@@ -48,6 +49,16 @@ jobs:
         run: |
           echo "youtube.client.id=${{ secrets.YOUTUBE_CLIENT_ID }}" >> local.properties
           echo "youtube.client.secret=${{ secrets.YOUTUBE_CLIENT_SECRET }}" >> local.properties
+
+      - name: Extract app metadata
+        id: metadata
+        shell: bash
+        run: |
+          APP_NAME=$(grep -oP '(?<=<string name="app_name">).*(?=</string>)' app/src/main/res/values/strings.xml | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9.-')
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          echo "app_name=$APP_NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "apk_name=${APP_NAME}-${VERSION}-${{ inputs.build_type }}.apk" >> "$GITHUB_OUTPUT"
 
       - name: Run unit tests
         if: inputs.run_tests
@@ -79,10 +90,11 @@ jobs:
       - name: Find APK
         id: find_apk
         run: |
-          APK=$(find app/build/outputs/apk -name '*.apk' | head -1)
-          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
-          BASENAME=$(basename "$APK")
-          echo "apk_name=$BASENAME" >> "$GITHUB_OUTPUT"
+          APK=$(find app/build/outputs/apk/${{ inputs.build_type }} -name '*.apk' | head -1)
+          RENAMED_APK=app/build/outputs/apk/${{ inputs.build_type }}/${{ steps.metadata.outputs.apk_name }}
+          mv "$APK" "$RENAMED_APK"
+          echo "apk_path=$RENAMED_APK" >> "$GITHUB_OUTPUT"
+          echo "apk_name=${{ steps.metadata.outputs.apk_name }}" >> "$GITHUB_OUTPUT"
 
       - name: Upload APK
         uses: actions/upload-artifact@v6
