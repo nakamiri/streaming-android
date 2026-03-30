@@ -91,7 +91,7 @@ class StreamingService : Service() {
         return PendingIntent.getActivity(
             this,
             0,
-            Intent(this, MainActivity::class.java),
+            Intent(this, MainActivity::class.java).setPackage(packageName),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
