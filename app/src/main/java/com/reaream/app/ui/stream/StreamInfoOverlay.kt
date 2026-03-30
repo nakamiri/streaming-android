@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.reaream.app.data.model.AppSettings
+import com.reaream.app.data.model.clampAutoReconnectAttempts
 import com.reaream.app.streaming.StreamingEngine
 import kotlinx.coroutines.delay
 import java.util.Locale
@@ -85,6 +86,15 @@ fun StreamInfoOverlay(
                     text = "\u25CF",
                     color = qualityColor,
                     fontSize = 12.sp,
+                )
+            }
+
+            reconnectOverlayText(streamState, settings)?.let { statusText ->
+                Text(
+                    text = statusText,
+                    color = Color(0xFFFFC107),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
                 )
             }
         }
@@ -216,6 +226,20 @@ fun StreamInfoOverlay(
             onToggleScreenBlackout = onToggleScreenBlackout,
         )
     }
+}
+
+private fun reconnectOverlayText(
+    streamState: StreamingEngine.StreamState,
+    settings: AppSettings,
+): String? = when {
+    streamState.reconnectAttempt > 0 -> {
+        val maxAttempts = streamState.reconnectMaxAttempts
+            .takeIf { it > 0 }
+            ?: settings.currentStream.autoReconnectAttempts.clampAutoReconnectAttempts()
+        "Reconnecting (${streamState.reconnectAttempt}/$maxAttempts)"
+    }
+    streamState.isConnecting -> "Connecting"
+    else -> null
 }
 
 @Composable

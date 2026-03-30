@@ -48,6 +48,13 @@ fun StreamEditScreen(
     var videoCodec by remember(stream) { mutableStateOf(stream.videoCodec) }
     var srtLatency by remember(stream) { mutableStateOf(stream.srtLatency.toString()) }
     var adaptiveBitrate by remember(stream) { mutableStateOf(stream.adaptiveBitrate) }
+    var autoReconnect by remember(stream) { mutableStateOf(stream.autoReconnect) }
+    var autoReconnectAttempts by remember(stream) {
+        mutableStateOf(stream.autoReconnectAttempts.toString())
+    }
+    var autoReconnectDelaySeconds by remember(stream) {
+        mutableStateOf(stream.autoReconnectDelaySeconds.toString())
+    }
     // YouTube Live settings
     var youtubeLatency by remember(stream) { mutableStateOf(stream.youtubeLatency) }
     var youtubeAutoStart by remember(stream) { mutableStateOf(stream.youtubeAutoStart) }
@@ -99,6 +106,15 @@ fun StreamEditScreen(
                                 videoCodec = videoCodec,
                                 srtLatency = srtLatency.toIntOrNull() ?: 2000,
                                 adaptiveBitrate = adaptiveBitrate,
+                                autoReconnect = autoReconnect,
+                                autoReconnectAttempts =
+                                    (autoReconnectAttempts.toIntOrNull()
+                                        ?: DEFAULT_AUTO_RECONNECT_ATTEMPTS)
+                                        .clampAutoReconnectAttempts(),
+                                autoReconnectDelaySeconds =
+                                    (autoReconnectDelaySeconds.toIntOrNull()
+                                        ?: DEFAULT_AUTO_RECONNECT_DELAY_SECONDS)
+                                        .clampAutoReconnectDelaySeconds(),
                                 authType = stream.authType,
                                 youtubeChannelName = channelName,
                                 youtubeBroadcastTitle = stream.youtubeBroadcastTitle,
@@ -305,6 +321,74 @@ fun StreamEditScreen(
                     )
                 },
             )
+
+            ListItem(
+                headlineContent = { Text("自動再接続") },
+                supportingContent = {
+                    Text("配信中に接続が切れた場合、すぐに再接続を開始し、その後は指定間隔で指定回数まで試します")
+                },
+                trailingContent = {
+                    Switch(
+                        checked = autoReconnect,
+                        onCheckedChange = { autoReconnect = it },
+                    )
+                },
+            )
+
+            OutlinedTextField(
+                value = autoReconnectAttempts,
+                onValueChange = { autoReconnectAttempts = it },
+                label = { Text("Reconnect Attempts") },
+                supportingText = {
+                    Text("${MIN_AUTO_RECONNECT_ATTEMPTS}-${MAX_AUTO_RECONNECT_ATTEMPTS} 回。初回即時試行を含みます")
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                enabled = autoReconnect,
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("推奨:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                listOf(3, 5, 10).forEach { preset ->
+                    FilterChip(
+                        selected = autoReconnectAttempts == preset.toString(),
+                        onClick = { autoReconnectAttempts = preset.toString() },
+                        label = { Text("${preset}回", fontSize = 11.sp) },
+                        enabled = autoReconnect,
+                    )
+                }
+            }
+            OutlinedTextField(
+                value = autoReconnectDelaySeconds,
+                onValueChange = { autoReconnectDelaySeconds = it },
+                label = { Text("Reconnect Interval (sec)") },
+                supportingText = {
+                    Text("${MIN_AUTO_RECONNECT_DELAY_SECONDS}-${MAX_AUTO_RECONNECT_DELAY_SECONDS} 秒。2回目以降の待機時間です")
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                enabled = autoReconnect,
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("推奨:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                listOf(1, 3, 5).forEach { preset ->
+                    FilterChip(
+                        selected = autoReconnectDelaySeconds == preset.toString(),
+                        onClick = { autoReconnectDelaySeconds = preset.toString() },
+                        label = { Text("${preset}秒", fontSize = 11.sp) },
+                        enabled = autoReconnect,
+                    )
+                }
+            }
 
             // Video Codec
             Text("Video Codec", style = MaterialTheme.typography.labelLarge)

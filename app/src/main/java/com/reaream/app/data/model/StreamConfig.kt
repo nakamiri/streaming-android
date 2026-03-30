@@ -14,6 +14,9 @@ data class StreamConfig(
     val fps: Int = 30,
     val videoCodec: VideoCodec = VideoCodec.H264,
     val adaptiveBitrate: Boolean = false,
+    val autoReconnect: Boolean = false,
+    val autoReconnectAttempts: Int = DEFAULT_AUTO_RECONNECT_ATTEMPTS,
+    val autoReconnectDelaySeconds: Int = DEFAULT_AUTO_RECONNECT_DELAY_SECONDS,
     val srtLatency: Int = 2000,
     val authType: AuthType = AuthType.STREAM_KEY,
     val youtubeChannelId: String = "",
@@ -24,6 +27,19 @@ data class StreamConfig(
     val youtubeAutoStart: Boolean = true,
     val youtubeAutoStop: Boolean = true,
 )
+
+const val DEFAULT_AUTO_RECONNECT_ATTEMPTS = 5
+const val MIN_AUTO_RECONNECT_ATTEMPTS = 1
+const val MAX_AUTO_RECONNECT_ATTEMPTS = 10
+const val DEFAULT_AUTO_RECONNECT_DELAY_SECONDS = 3
+const val MIN_AUTO_RECONNECT_DELAY_SECONDS = 1
+const val MAX_AUTO_RECONNECT_DELAY_SECONDS = 30
+
+fun Int.clampAutoReconnectAttempts(): Int =
+    coerceIn(MIN_AUTO_RECONNECT_ATTEMPTS, MAX_AUTO_RECONNECT_ATTEMPTS)
+
+fun Int.clampAutoReconnectDelaySeconds(): Int =
+    coerceIn(MIN_AUTO_RECONNECT_DELAY_SECONDS, MAX_AUTO_RECONNECT_DELAY_SECONDS)
 
 @Serializable
 enum class AuthType {

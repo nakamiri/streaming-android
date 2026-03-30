@@ -19,6 +19,7 @@
 - PR タイトルは英語、PR 本文は日本語で書く
 - PR 本文の形式は直近の `#21` 以前の PR に合わせ、`## Summary` と `## Test plan` を使う
 - PR 本文や実行手順には `/Users/...` のようなローカル環境依存の絶対パスを書かない。リポジトリルート基準の相対パスか一般的なコマンドにする
+- PR 本文の `Test plan` には `asdf` やローカルの `JAVA_HOME` など、他の人に不要なローカル環境依存の前置きは書かず、`./gradlew ...` など共有可能なコマンドを優先する
 - `git worktree` や Claude Code / OpenCode などの別 worktree で作業する場合、元 repo の `local.properties` は自動で来ないことがある。YouTube OAuth を使うビルドや確認の前に、元 repo からその worktree へ `local.properties` をコピーしておく
 
 ```bash
@@ -239,6 +240,26 @@ adb logcat -d -s "LocationProvider:*"
 
 # クラッシュログ
 adb logcat -d | grep "AndroidRuntime" | grep -E "FATAL|Exception" | head -5
+```
+
+### ffmpeg での受信確認
+
+```bash
+# ホストで RTMP を待ち受け（エミュレータからは 10.0.2.2 で到達）
+ffmpeg -listen 1 -i rtmp://0.0.0.0:1935/stream/test -c copy -f null -
+
+# アプリ側の設定例
+# URL: rtmp://10.0.2.2:1935/stream
+# Stream Key: test
+# Stream Edit > 自動再接続: ON
+# Stream Edit > Reconnect Attempts / Reconnect Interval (sec): 任意
+
+# 自動再接続の確認:
+# 1. 上の ffmpeg を起動した状態で配信開始
+# 2. ffmpeg を Ctrl+C で止めて切断を発生させる
+# 3. 数秒後に同じ ffmpeg コマンドを再実行
+# 4. adb logcat -d -s "StreamingEngine:*" "RtmpConnection:*" で再接続ログを確認
+# 5. 画面左上に `Reconnecting (n/x)` が表示されることを確認
 ```
 
 ### テストサイクル（一連の流れ）

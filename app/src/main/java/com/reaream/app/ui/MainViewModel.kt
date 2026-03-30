@@ -630,6 +630,12 @@ private fun buildNotificationStatusText(
         AudioInputMode.TEST_TONE -> "Tone"
     }
     return when {
+        state.reconnectAttempt > 0 -> {
+            val maxAttempts = state.reconnectMaxAttempts
+                .takeIf { it > 0 }
+                ?: settings.currentStream.autoReconnectAttempts.clampAutoReconnectAttempts()
+            "Reconnecting (${state.reconnectAttempt}/$maxAttempts) | $source"
+        }
         state.isConnecting -> "Connecting | $source"
         state.isStreaming -> {
             val fpsText = if (state.fps > 0) String.format(Locale.US, "%dfps", state.fps) else "--fps"
