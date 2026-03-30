@@ -7,9 +7,13 @@ import android.os.Bundle
 import android.util.Log
 import android.view.Surface
 import com.reaream.app.data.model.StreamConfig
+import com.reaream.app.data.model.DEFAULT_AUTO_RECONNECT_ATTEMPTS
+import com.reaream.app.data.model.DEFAULT_AUTO_RECONNECT_DELAY_SECONDS
 import com.reaream.app.data.model.StreamProtocol
 import com.reaream.app.data.model.VideoCodec
 import com.reaream.app.data.model.WidgetSettings
+import com.reaream.app.data.model.clampAutoReconnectAttempts
+import com.reaream.app.data.model.clampAutoReconnectDelaySeconds
 import com.reaream.app.data.model.startValidationError
 import com.reaream.app.streaming.gl.GlStreamPipeline
 import com.reaream.app.streaming.protocol.RtmpConnection
@@ -58,7 +62,9 @@ class StreamingEngine {
     private var currentConfig: StreamConfig? = null
     private var videoOutputJob: Job? = null
     private var statsJob: Job? = null
+    private var reconnectJob: Job? = null
     private val pendingAudioPcm = PcmFrameBuffer(AUDIO_AAC_FRAME_BYTES)
+    private var latestVideoCodecConfig: ByteArray? = null
 
     private var startTimeNanos: Long = 0L
     private var baseAudioTimestampUs: Long = -1L
@@ -90,6 +96,8 @@ class StreamingEngine {
         val thermalMitigationEnabled: Boolean = false,
         val inputAudioLevel: Float = 0f,
         val outputAudioLevel: Float = 0f,
+        val reconnectAttempt: Int = 0,
+        val reconnectMaxAttempts: Int = 0,
     )
 
     enum class ConnectionQuality { UNKNOWN, GOOD, FAIR, POOR }
@@ -113,6 +121,7 @@ class StreamingEngine {
         baseAudioTimestampUs = -1L
         videoFramesSentThisSecond.set(0)
         videoFramesDroppedThisSecond.set(0)
+        latestVideoCodecConfig = null
         glPipeline.framesRendered.set(0)
         glPipeline.framesDropped.set(0)
         glPipeline.setDisplayPreviewFpsCapWhileEncoding(NORMAL_PREVIEW_FPS_WHILE_ENCODING)
@@ -379,6 +388,9 @@ class StreamingEngine {
                                 val data = copyOutputBuffer(outputBuffer, info)
                                 val isCodecConfig =
                                     info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
+                                if (isCodecConfig) {
+                                    latestVideoCodecConfig = data.copyOf()
+                                }
                                 val sent = connection?.sendVideo(data, info.presentationTimeUs, info.flags) == true
                                 if (!isCodecConfig) {
                                     if (sent) {
@@ -409,6 +421,7 @@ class StreamingEngine {
             Log.w(TAG, "Encoder output format did not expose codec config buffers")
             return
         }
+        latestVideoCodecConfig = codecConfig.copyOf()
         if (connection?.sendVideo(codecConfig, 0L, MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != true) {
             Log.w(TAG, "Failed to send codec config from output format")
         }
@@ -564,6 +577,7 @@ class StreamingEngine {
         baseAudioTimestampUs = -1L
         pendingAudioPresentationTimeUs = 0L
         pendingAudioPcm.clear()
+        latestVideoCodecConfig = null
         poorQualityStreak = 0
         goodQualityStreak = 0
         configuredBitrateKbps = 0
@@ -579,7 +593,7 @@ class StreamingEngine {
     private fun launchStatsUpdater(session: Int) {
         statsJob?.cancel()
         statsJob = scope.launch {
-            var lastBytes = 0L
+            var lastBytes = totalBytesSent.get()
             var secondsWithoutVideo = 0
 
             while (isSessionActive(session) && _state.value.isStreaming) {
@@ -589,7 +603,11 @@ class StreamingEngine {
 
                 val currentConnection = connection
                 if (currentConnection != null && !currentConnection.isConnected) {
-                    failStreaming(session, "接続が切断されました")
+                    if (currentConfig?.autoReconnect == true) {
+                        beginReconnect(session)
+                    } else {
+                        failStreaming(session, "接続が切断されました")
+                    }
                     break
                 }
 
@@ -709,9 +727,110 @@ class StreamingEngine {
         }
     }
 
+    private fun beginReconnect(session: Int) {
+        if (!isSessionActive(session) || reconnectJob?.isActive == true) return
+        if (!_state.value.isStreaming) return
+
+        reconnectJob = scope.launch {
+            poorQualityStreak = 0
+            goodQualityStreak = 0
+            var lastError = "接続が切断されました"
+            val maxAttempts = currentConfig?.autoReconnectAttempts
+                ?.clampAutoReconnectAttempts()
+                ?: DEFAULT_AUTO_RECONNECT_ATTEMPTS
+            val reconnectDelayMs = (currentConfig?.autoReconnectDelaySeconds
+                ?.clampAutoReconnectDelaySeconds()
+                ?: DEFAULT_AUTO_RECONNECT_DELAY_SECONDS) * 1000L
+
+            val previousConnection = connection
+            connection = null
+            try {
+                previousConnection?.disconnect()
+            } catch (e: Exception) {
+                Log.w(TAG, "Error disconnecting before reconnect", e)
+            }
+
+            repeat(maxAttempts) { index ->
+                if (!isSessionActive(session) || !_state.value.isStreaming) return@launch
+
+                val attempt = index + 1
+                _state.value = _state.value.copy(
+                    isConnecting = true,
+                    error = null,
+                    connectionQuality = ConnectionQuality.UNKNOWN,
+                    reconnectAttempt = attempt,
+                    reconnectMaxAttempts = maxAttempts,
+                )
+
+                if (attempt > 1) {
+                    delay(reconnectDelayMs)
+                }
+
+                val reconnectConfig = currentConfig
+                if (reconnectConfig == null) {
+                    lastError = "再接続する配信設定が見つかりません"
+                    return@repeat
+                }
+
+                try {
+                    val createdConnection = createConnection(reconnectConfig)
+                    withTimeout(10_000L) { createdConnection.connect() }
+
+                    if (!isSessionActive(session) || !_state.value.isStreaming) {
+                        try {
+                            createdConnection.disconnect()
+                        } catch (_: Exception) {
+                        }
+                        return@launch
+                    }
+
+                    connection = createdConnection
+                    val currentState = _state.value
+                    if (currentState.videoWidth > 0 && currentState.videoHeight > 0) {
+                        createdConnection.updateVideoParameters(
+                            currentState.videoWidth,
+                            currentState.videoHeight,
+                            reconnectConfig.videoCodec,
+                        )
+                    }
+                    latestVideoCodecConfig?.let {
+                        createdConnection.sendVideo(it, 0L, MediaCodec.BUFFER_FLAG_CODEC_CONFIG)
+                    }
+                    _state.value = _state.value.copy(
+                        isConnecting = false,
+                        error = null,
+                        connectionQuality = ConnectionQuality.UNKNOWN,
+                        reconnectAttempt = 0,
+                        reconnectMaxAttempts = 0,
+                    )
+                    launchStatsUpdater(session)
+                    reconnectJob = null
+                    Log.i(TAG, "Stream reconnected on attempt $attempt")
+                    return@launch
+                } catch (e: TimeoutCancellationException) {
+                    lastError = "再接続がタイムアウトしました"
+                    Log.w(TAG, "Reconnect attempt $attempt timed out", e)
+                } catch (e: Exception) {
+                    lastError = e.message?.takeIf { it.isNotBlank() }
+                        ?: "再接続に失敗しました: ${e.javaClass.simpleName}"
+                    Log.w(TAG, "Reconnect attempt $attempt failed", e)
+                }
+            }
+
+            reconnectJob = null
+            failStreaming(session, lastError)
+        }
+    }
+
     private suspend fun shutdownStreaming(error: String?) {
         shutdownMutex.withLock {
             sessionVersion.incrementAndGet()
+
+            val currentReconnectJob = reconnectJob
+            reconnectJob = null
+            if (currentReconnectJob != null) {
+                currentReconnectJob.cancelAndJoin()
+            }
 
             val outputJob = videoOutputJob
             videoOutputJob = null

@@ -241,6 +241,26 @@ adb logcat -d -s "LocationProvider:*"
 adb logcat -d | grep "AndroidRuntime" | grep -E "FATAL|Exception" | head -5
 ```
 
+### ffmpeg での受信確認
+
+```bash
+# ホストで RTMP を待ち受け（エミュレータからは 10.0.2.2 で到達）
+ffmpeg -listen 1 -i rtmp://0.0.0.0:1935/stream/test -c copy -f null -
+
+# アプリ側の設定例
+# URL: rtmp://10.0.2.2:1935/stream
+# Stream Key: test
+# Stream Edit > 自動再接続: ON
+# Stream Edit > Reconnect Attempts / Reconnect Interval (sec): 任意
+
+# 自動再接続の確認:
+# 1. 上の ffmpeg を起動した状態で配信開始
+# 2. ffmpeg を Ctrl+C で止めて切断を発生させる
+# 3. 数秒後に同じ ffmpeg コマンドを再実行
+# 4. adb logcat -d -s "StreamingEngine:*" "RtmpConnection:*" で再接続ログを確認
+# 5. 画面左上に `Reconnecting (n/x)` が表示されることを確認
+```
+
 ### テストサイクル（一連の流れ）
 
 1. `adb logcat -c` — ログクリア

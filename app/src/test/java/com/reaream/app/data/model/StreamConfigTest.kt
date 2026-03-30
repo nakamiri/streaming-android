@@ -22,6 +22,9 @@ class StreamConfigTest {
         assertEquals(30, config.fps)
         assertEquals(VideoCodec.H264, config.videoCodec)
         assertFalse(config.adaptiveBitrate)
+        assertFalse(config.autoReconnect)
+        assertEquals(DEFAULT_AUTO_RECONNECT_ATTEMPTS, config.autoReconnectAttempts)
+        assertEquals(DEFAULT_AUTO_RECONNECT_DELAY_SECONDS, config.autoReconnectDelaySeconds)
         assertEquals(2000, config.srtLatency)
     }
 
@@ -38,6 +41,9 @@ class StreamConfigTest {
             fps = 60,
             videoCodec = VideoCodec.H265,
             adaptiveBitrate = true,
+            autoReconnect = true,
+            autoReconnectAttempts = 7,
+            autoReconnectDelaySeconds = 9,
             srtLatency = 3000,
         )
 
@@ -116,6 +122,20 @@ class StreamConfigTest {
         assertEquals(AuthType.STREAM_KEY, config.authType)
         assertEquals("", config.youtubeChannelId)
         assertEquals(YouTubePrivacy.UNLISTED, config.youtubePrivacy)
+    }
+
+    @Test
+    fun `auto reconnect attempts are clamped to valid range`() {
+        assertEquals(MIN_AUTO_RECONNECT_ATTEMPTS, 0.clampAutoReconnectAttempts())
+        assertEquals(4, 4.clampAutoReconnectAttempts())
+        assertEquals(MAX_AUTO_RECONNECT_ATTEMPTS, 99.clampAutoReconnectAttempts())
+    }
+
+    @Test
+    fun `auto reconnect delay is clamped to valid range`() {
+        assertEquals(MIN_AUTO_RECONNECT_DELAY_SECONDS, 0.clampAutoReconnectDelaySeconds())
+        assertEquals(4, 4.clampAutoReconnectDelaySeconds())
+        assertEquals(MAX_AUTO_RECONNECT_DELAY_SECONDS, 99.clampAutoReconnectDelaySeconds())
     }
 
     @Test

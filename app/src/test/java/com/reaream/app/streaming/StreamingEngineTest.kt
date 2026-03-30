@@ -63,6 +63,8 @@ class StreamingEngineTest {
         val state = StreamState(error = "Connection timeout")
         assertEquals("Connection timeout", state.error)
         assertFalse(state.isStreaming)
+        assertEquals(0, state.reconnectAttempt)
+        assertEquals(0, state.reconnectMaxAttempts)
     }
 
     @Test
@@ -232,5 +234,23 @@ class StreamingEngineTest {
 
         assertEquals(config, engine.getCurrentConfig())
         engine.release()
+    }
+
+    @Test
+    fun `stream state copy preserves reconnect attempt`() {
+        val state = StreamState(
+            isStreaming = true,
+            isConnecting = true,
+            reconnectAttempt = 2,
+            reconnectMaxAttempts = 7,
+        )
+
+        val updated = state.copy(error = "retrying")
+
+        assertTrue(updated.isStreaming)
+        assertTrue(updated.isConnecting)
+        assertEquals(2, updated.reconnectAttempt)
+        assertEquals(7, updated.reconnectMaxAttempts)
+        assertEquals("retrying", updated.error)
     }
 }

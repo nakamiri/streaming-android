@@ -45,8 +45,8 @@ fun ControlBar(
 ) {
     val streamButtonColor by animateColorAsState(
         targetValue = when {
-            isStreaming -> Color(0xFFFF4444)
             isConnecting -> Color(0xFFFFC107)
+            isStreaming -> Color(0xFFFF4444)
             else -> Color(0xFF4CAF50)
         },
         label = "streamColor",
@@ -55,7 +55,7 @@ fun ControlBar(
     val streamButton: @Composable () -> Unit = {
         IconButton(
             onClick = onToggleStreaming,
-            enabled = !isConnecting,
+            enabled = !isConnecting || isStreaming,
             modifier = Modifier
                 .size(56.dp)
                 .background(streamButtonColor, CircleShape),
