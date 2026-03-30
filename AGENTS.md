@@ -218,7 +218,7 @@ GOOD が 10 秒続くと 1 ステップ上げる。`StreamState.adaptiveStepDown
 
 #### 実機テスト予定
 - [x] トーチ（ライト）（Pixel 7 で確認済み）
-- [ ] 映像安定化
+- [x] 映像安定化（Pixel 7 で確認済み: Settings > Camera で Auto / Optical / Electronic を選択可能。選択中カメラの対応方式を表示）
 - [x] 1080p 解像度での配信（Pixel 7 で確認済み: I420→NV12 変換 + ストライドパディング + 解像度スケーリング）
 
 ### ログ確認

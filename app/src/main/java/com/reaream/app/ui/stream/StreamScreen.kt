@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.res.Configuration
+import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.util.Log
@@ -51,9 +52,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
+import com.reaream.app.camera.getVideoStabilizationSupport
+import com.reaream.app.camera.resolveVideoStabilizationRequest
 import com.reaream.app.data.model.AppSettings
 import com.reaream.app.data.model.AudioInputMode
 import com.reaream.app.data.model.Resolution
+import com.reaream.app.data.model.VideoStabilizationMode
 import com.reaream.app.streaming.StreamingEngine
 import com.reaream.app.chat.ChatMessage
 
@@ -187,6 +191,7 @@ fun StreamScreen(
             CameraPreview(
                 engine = engine,
                 useFrontCamera = settings.camera.useFrontCamera,
+                stabilizationMode = settings.camera.stabilizationMode,
                 torchEnabled = torchEnabled,
                 zoomRatio = zoomRatio,
                 fps = settings.currentStream.fps,
@@ -863,6 +868,7 @@ private fun PortraitOverlay(
 fun CameraPreview(
     engine: StreamingEngine,
     useFrontCamera: Boolean,
+    stabilizationMode: VideoStabilizationMode,
     torchEnabled: Boolean,
     modifier: Modifier = Modifier,
     zoomRatio: Float = 1.0f,
@@ -899,7 +905,7 @@ fun CameraPreview(
         glPipeline.setFrontCamera(useFrontCamera)
     }
 
-    DisposableEffect(cameraSelector, fps, resolution, displayRotation) {
+    DisposableEffect(cameraSelector, fps, resolution, displayRotation, stabilizationMode) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
@@ -923,6 +929,8 @@ fun CameraPreview(
                     )
                     .build()
                 val targetFpsRange = findTargetFpsRange(cameraManager, useFrontCamera, fps)
+                val stabilizationSupport = getVideoStabilizationSupport(cameraManager, useFrontCamera)
+                val stabilizationRequest = resolveVideoStabilizationRequest(stabilizationMode, stabilizationSupport)
                 val fallbackRotation = findCameraPreviewRotation(cameraManager, useFrontCamera, displayRotation)
                 glPipeline.updateFallbackRotation(fallbackRotation)
                 Log.i(
@@ -933,12 +941,24 @@ fun CameraPreview(
                 val preview = Preview.Builder().also { builder ->
                     builder.setTargetRotation(displayRotation)
                     builder.setResolutionSelector(resolutionSelector)
+                    val extender = Camera2Interop.Extender(builder)
                     if (targetFpsRange != null) {
-                        Camera2Interop.Extender(builder)
-                            .setCaptureRequestOption(
-                                android.hardware.camera2.CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
-                                targetFpsRange,
-                            )
+                        extender.setCaptureRequestOption(
+                            CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
+                            targetFpsRange,
+                        )
+                    }
+                    if (stabilizationRequest.electronicMode != null) {
+                        extender.setCaptureRequestOption(
+                            CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE,
+                            stabilizationRequest.electronicMode,
+                        )
+                    }
+                    if (stabilizationRequest.opticalMode != null) {
+                        extender.setCaptureRequestOption(
+                            CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE,
+                            stabilizationRequest.opticalMode,
+                        )
                     }
                 }.build()
 
