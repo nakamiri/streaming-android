@@ -39,6 +39,7 @@ fun ControlBar(
     onToggleTorch: () -> Unit,
     onSwitchCamera: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenLiveSettings: () -> Unit = {},
     onZoomChange: (Float) -> Unit = {},
     onEditWidgets: () -> Unit = {},
 ) {
@@ -104,6 +105,11 @@ fun ControlBar(
             ) {
                 streamButton()
                 ControlButton(
+                    icon = Icons.Filled.Cameraswitch,
+                    label = "Flip",
+                    onClick = onSwitchCamera,
+                )
+                ControlButton(
                     icon = if (isMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
                     label = if (isMuted) "Unmute" else "Mute",
                     isActive = isMuted,
@@ -118,11 +124,6 @@ fun ControlBar(
                     onClick = onToggleTorch,
                 )
                 ControlButton(
-                    icon = Icons.Filled.Cameraswitch,
-                    label = "Flip",
-                    onClick = onSwitchCamera,
-                )
-                ControlButton(
                     icon = Icons.Filled.Settings,
                     label = "Settings",
                     onClick = onOpenSettings,
@@ -134,6 +135,12 @@ fun ControlBar(
                         onClick = onEditWidgets,
                     )
                 }
+                ControlButton(
+                    icon = Icons.Filled.Tune,
+                    label = "Live",
+                    activeColor = Color(0xFF9C7CF4),
+                    onClick = onOpenLiveSettings,
+                )
             }
         }
     } else {
@@ -156,6 +163,11 @@ fun ControlBar(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 ControlButton(
+                    icon = Icons.Filled.Cameraswitch,
+                    label = "Flip",
+                    onClick = onSwitchCamera,
+                )
+                ControlButton(
                     icon = if (isMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
                     label = if (isMuted) "Unmute" else "Mute",
                     isActive = isMuted,
@@ -171,11 +183,6 @@ fun ControlBar(
                 )
                 streamButton()
                 ControlButton(
-                    icon = Icons.Filled.Cameraswitch,
-                    label = "Flip",
-                    onClick = onSwitchCamera,
-                )
-                ControlButton(
                     icon = Icons.Filled.Settings,
                     label = "Settings",
                     onClick = onOpenSettings,
@@ -187,6 +194,12 @@ fun ControlBar(
                         onClick = onEditWidgets,
                     )
                 }
+                ControlButton(
+                    icon = Icons.Filled.Tune,
+                    label = "Live",
+                    activeColor = Color(0xFF9C7CF4),
+                    onClick = onOpenLiveSettings,
+                )
             }
         }
     }

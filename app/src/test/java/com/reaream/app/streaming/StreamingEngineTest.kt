@@ -222,4 +222,15 @@ class StreamingEngineTest {
     fun `audio frame duration matches 1024 samples at 44 point 1khz`() {
         assertEquals(23_219L, audioSamplesToDurationUs(1024))
     }
+
+    @Test
+    fun `updateLiveStreamConfig stores latest config when idle`() {
+        val engine = StreamingEngine()
+        val config = StreamConfig(videoBitrate = 6500, audioBitrate = 160, adaptiveBitrate = true)
+
+        engine.updateLiveStreamConfig(config)
+
+        assertEquals(config, engine.getCurrentConfig())
+        engine.release()
+    }
 }

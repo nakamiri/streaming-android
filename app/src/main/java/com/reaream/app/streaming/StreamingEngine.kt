@@ -200,6 +200,31 @@ class StreamingEngine {
         scope.launch { shutdownStreaming(null) }
     }
 
+    fun getCurrentConfig(): StreamConfig? = currentConfig
+
+    fun updateLiveStreamConfig(config: StreamConfig) {
+        val previous = currentConfig
+        currentConfig = config
+
+        if (!_state.value.isStreaming && !_state.value.isConnecting) return
+
+        configuredBitrateKbps = config.videoBitrate
+        if (!config.adaptiveBitrate) {
+            currentAdaptiveBitrateKbps = 0
+            poorQualityStreak = 0
+            goodQualityStreak = 0
+        }
+        applyRequestedVideoBitrate(computeRequestedVideoBitrateKbps())
+
+        if (previous?.audioBitrate != config.audioBitrate) {
+            try {
+                recreateAudioEncoder(config)
+            } catch (e: Exception) {
+                failStreaming(sessionVersion.get(), "音声ビットレートの更新に失敗しました", e)
+            }
+        }
+    }
+
     fun onAudioData(buffer: ByteArray, presentationTimeUs: Long) {
         if (!_state.value.isStreaming) return
         if (baseAudioTimestampUs < 0) baseAudioTimestampUs = presentationTimeUs
@@ -468,6 +493,21 @@ class StreamingEngine {
             configure(audioFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             start()
         }
+    }
+
+    private fun recreateAudioEncoder(config: StreamConfig) {
+        try {
+            audioEncoder?.stop()
+        } catch (_: Exception) {
+        }
+        try {
+            audioEncoder?.release()
+        } catch (_: Exception) {
+        }
+        audioEncoder = null
+        pendingAudioPcm.clear()
+        setupAudioEncoder(config)
+        Log.i(TAG, "Audio encoder updated: ${config.audioBitrate}kbps")
     }
 
     private fun createConnection(config: StreamConfig): StreamConnection {

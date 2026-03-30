@@ -125,8 +125,8 @@ class AudioCapture(
         captureJob = scope.launch {
             var framesCaptured = 0L
             var phase = 0.0
-            val angularStep = 2.0 * PI * toneFrequencyHz.coerceIn(MIN_TONE_FREQUENCY_HZ, MAX_TONE_FREQUENCY_HZ) / SAMPLE_RATE
             while (isActive) {
+                val angularStep = 2.0 * PI * toneFrequencyHz.coerceIn(MIN_TONE_FREQUENCY_HZ, MAX_TONE_FREQUENCY_HZ) / SAMPLE_RATE
                 val timestampUs = framesCaptured * MICROS_PER_SECOND / SAMPLE_RATE
                 val pcm = if (isMuted) {
                     ByteArray(chunkSize)

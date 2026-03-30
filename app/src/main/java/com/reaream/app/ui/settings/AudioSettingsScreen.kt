@@ -17,6 +17,7 @@ import java.util.Locale
 @Composable
 fun AudioSettingsScreen(
     audio: AudioSettings,
+    isStreaming: Boolean,
     onBack: () -> Unit,
     onUpdate: (AudioSettings) -> Unit,
 ) {
@@ -38,6 +39,13 @@ fun AudioSettingsScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState()),
         ) {
+            if (isStreaming) {
+                ListItem(
+                    headlineContent = { Text("Live Update") },
+                    supportingContent = { Text("Mute / Gain は即時反映されます。Audio Source を変えると入力を切り替えます。") },
+                )
+            }
+
             SwitchItem(
                 title = "Mute Audio",
                 subtitle = "Mute the current audio source",
