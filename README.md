@@ -54,12 +54,73 @@ Android 向けライブ配信アプリ。スマートフォンのカメラから
 # デバッグビルド
 ./gradlew assembleDebug
 
+# リリースビルド
+./gradlew assembleRelease
+
 # インストール
 ./gradlew installDebug
 
 # テスト
 ./gradlew testDebugUnitTest
 ```
+
+### Release keystore と CI Secrets
+
+GitHub の tag release で署名付き APK を作るには、release 用 keystore と Secrets が必要です。
+
+1. keystore を作成:
+
+```bash
+keytool -genkeypair -v \
+  -keystore release.keystore \
+  -alias reaream \
+  -keyalg RSA \
+  -keysize 2048 \
+  -validity 10000
+```
+
+2. `release.keystore` を安全な場所にバックアップ
+3. keystore を base64 化して GitHub Secrets に登録
+
+macOS:
+
+```bash
+base64 -i release.keystore | pbcopy
+```
+
+Linux:
+
+```bash
+base64 -w 0 release.keystore | xclip -selection clipboard
+```
+
+登録する Secrets:
+
+- `KEYSTORE_BASE64`: `release.keystore` の base64 文字列
+- `KEYSTORE_PASSWORD`: keystore のパスワード
+- `KEY_ALIAS`: 例 `reaream`
+- `KEY_PASSWORD`: key のパスワード
+- `YOUTUBE_CLIENT_ID`: YouTube OAuth 用
+- `YOUTUBE_CLIENT_SECRET`: YouTube OAuth 用
+
+リポジトリ設定場所:
+
+1. GitHub のリポジトリを開く
+2. `Settings`
+3. `Secrets and variables` → `Actions`
+4. `New repository secret` から追加
+
+`release.yml` の挙動:
+
+- `v*` tag push で実行
+- `KEYSTORE_BASE64` などが揃っていれば signed `release` APK を作成
+- keystore が無ければ unsigned `release` APK を作成
+- tag 名に `-` を含む場合は GitHub Release が prerelease 扱いになる
+
+注意:
+
+- `release.keystore` は絶対にコミットしない
+- keystore とパスワードを失うと、同じアプリの更新配布が困難になる
 
 ### YouTube OAuth セットアップ（任意）
 

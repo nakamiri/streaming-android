@@ -38,6 +38,20 @@ jobs:
         run: |
           sed -i "s/versionName = \".*\"/versionName = \"${{ steps.version.outputs.version }}\"/" app/build.gradle.kts
 
+      - name: Extract app metadata
+        id: metadata
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        shell: bash
+        run: |
+          APP_NAME=$(grep -oP '(?<=<string name="app_name">).*(?=</string>)' app/src/main/res/values/strings.xml | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9.-')
+          APK_SUFFIX=""
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            APK_SUFFIX="-unsigned"
+          fi
+          echo "app_name=$APP_NAME" >> "$GITHUB_OUTPUT"
+          echo "apk_name=${APP_NAME}-${{ steps.version.outputs.version }}${APK_SUFFIX}.apk" >> "$GITHUB_OUTPUT"
+
       - name: Write YouTube OAuth credentials
         run: |
           echo "youtube.client.id=${{ secrets.YOUTUBE_CLIENT_ID }}" >> local.properties
@@ -62,18 +76,20 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: ./gradlew assembleRelease
 
-      - name: Build release APK (unsigned, debug-signed)
+      - name: Build release APK (unsigned)
         if: env.KEYSTORE_BASE64 == ''
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleRelease
 
       - name: Find APK
         id: find_apk
         run: |
-          APK=$(find app/build/outputs/apk -name '*.apk' | head -1)
-          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
-          echo "apk_name=reaream-${{ steps.version.outputs.version }}.apk" >> "$GITHUB_OUTPUT"
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          RENAMED_APK=app/build/outputs/apk/release/${{ steps.metadata.outputs.apk_name }}
+          mv "$APK" "$RENAMED_APK"
+          echo "apk_path=$RENAMED_APK" >> "$GITHUB_OUTPUT"
+          echo "apk_name=${{ steps.metadata.outputs.apk_name }}" >> "$GITHUB_OUTPUT"
 
       - name: Generate changelog
         id: changelog
@@ -102,7 +118,7 @@ jobs:
             ${{ steps.changelog.outputs.changes }}
 
             ### Installation
-            1. Download `reaream-${{ steps.version.outputs.version }}.apk`
+            1. Download `${{ steps.find_apk.outputs.apk_name }}`
             2. Enable "Install from unknown sources" on your Android device
             3. Install the APK
           files: ${{ steps.find_apk.outputs.apk_path }}
