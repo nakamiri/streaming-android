@@ -28,8 +28,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val chatManager = ChatManager()
     val locationProvider = LocationProvider(application)
     val mapTileProvider = MapTileProvider()
-    val audioCapture = AudioCapture { data, timestamp ->
-        streamingEngine.onAudioData(data, timestamp)
+    val audioCapture = AudioCapture { data, timestamp, inputLevel, outputLevel ->
+        streamingEngine.onAudioData(data, timestamp, inputLevel, outputLevel)
     }
 
     val youtubeAuthManager = YouTubeAuthManager(application)
@@ -417,7 +417,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setAudioGain(gain: Float) {
-        val clamped = gain.coerceIn(0f, 2f)
+        val clamped = gain.coerceIn(0f, 4f)
         viewModelScope.launch {
             val updated = settings.value.audio.copy(gain = clamped)
             settingsRepo.update { it.copy(audio = updated) }

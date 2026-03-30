@@ -88,6 +88,8 @@ class StreamingEngine {
         val adaptiveBitrateKbps: Int = 0,
         val droppedFramesPerSec: Int = 0,
         val thermalMitigationEnabled: Boolean = false,
+        val inputAudioLevel: Float = 0f,
+        val outputAudioLevel: Float = 0f,
     )
 
     enum class ConnectionQuality { UNKNOWN, GOOD, FAIR, POOR }
@@ -225,8 +227,9 @@ class StreamingEngine {
         }
     }
 
-    fun onAudioData(buffer: ByteArray, presentationTimeUs: Long) {
+    fun onAudioData(buffer: ByteArray, presentationTimeUs: Long, inputLevel: Float, outputLevel: Float) {
         if (!_state.value.isStreaming) return
+        _state.value = _state.value.copy(inputAudioLevel = inputLevel, outputAudioLevel = outputLevel)
         if (baseAudioTimestampUs < 0) baseAudioTimestampUs = presentationTimeUs
         val relativeUs = presentationTimeUs - baseAudioTimestampUs
         try {

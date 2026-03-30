@@ -102,7 +102,7 @@ fun AudioSettingsScreen(
                         Slider(
                             value = audio.gain,
                             onValueChange = { onUpdate(audio.copy(gain = it)) },
-                            valueRange = 0f..3f,
+                            valueRange = 0f..4f,
                         )
                     }
                 },

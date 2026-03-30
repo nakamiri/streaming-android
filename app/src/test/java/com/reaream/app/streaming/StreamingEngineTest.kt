@@ -139,7 +139,7 @@ class StreamingEngineTest {
         val data = ByteArray(1024)
 
         // Should not throw
-        engine.onAudioData(data, 0L)
+        engine.onAudioData(data, 0L, 0f, 0f)
         engine.release()
     }
 

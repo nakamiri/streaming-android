@@ -14,7 +14,7 @@ import kotlin.math.sin
 import kotlin.math.roundToInt
 
 class AudioCapture(
-    private val onAudioData: (ByteArray, Long) -> Unit,
+    private val onAudioData: (ByteArray, Long, Float, Float) -> Unit,
 ) {
     private var audioRecord: AudioRecord? = null
     private var captureJob: Job? = null
@@ -85,10 +85,12 @@ class AudioCapture(
                     val frameAlignedRead = read - (read % BYTES_PER_FRAME)
                     if (frameAlignedRead <= 0) continue
                     val timestampUs = framesCaptured * MICROS_PER_SECOND / SAMPLE_RATE
+                    val inputLevel = calculatePcm16Level(buffer, frameAlignedRead)
                     if (isMuted) {
-                        onAudioData(ByteArray(frameAlignedRead), timestampUs)
+                        onAudioData(ByteArray(frameAlignedRead), timestampUs, inputLevel, 0f)
                     } else {
-                        onAudioData(applyGain(buffer, frameAlignedRead, gain), timestampUs)
+                        val output = applyGain(buffer, frameAlignedRead, gain)
+                        onAudioData(output, timestampUs, inputLevel, calculatePcm16Level(output, frameAlignedRead))
                     }
                     framesCaptured += frameAlignedRead / BYTES_PER_FRAME
                 } else if (read < 0 && read != AudioRecord.ERROR_INVALID_OPERATION) {
@@ -128,14 +130,12 @@ class AudioCapture(
             while (isActive) {
                 val angularStep = 2.0 * PI * toneFrequencyHz.coerceIn(MIN_TONE_FREQUENCY_HZ, MAX_TONE_FREQUENCY_HZ) / SAMPLE_RATE
                 val timestampUs = framesCaptured * MICROS_PER_SECOND / SAMPLE_RATE
-                val pcm = if (isMuted) {
-                    ByteArray(chunkSize)
-                } else {
-                    generateTonePcm16(chunkSize, gain, angularStep, phase).also {
-                        phase = it.nextPhase
-                    }.pcm
-                }
-                onAudioData(pcm, timestampUs)
+                val generated = generateTonePcm16(chunkSize, gain, angularStep, phase)
+                phase = generated.nextPhase
+                val inputLevel = calculatePcm16Level(generated.pcm, generated.pcm.size)
+                val pcm = if (isMuted) ByteArray(chunkSize) else generated.pcm
+                val outputLevel = if (isMuted) 0f else inputLevel
+                onAudioData(pcm, timestampUs, inputLevel, outputLevel)
                 framesCaptured += chunkSize / BYTES_PER_FRAME
                 delay((chunkSize / BYTES_PER_FRAME) * MILLIS_PER_SECOND / SAMPLE_RATE)
             }
@@ -195,6 +195,22 @@ internal data class GeneratedTonePcm(
     val nextPhase: Double,
 )
 
+internal fun calculatePcm16Level(source: ByteArray, size: Int): Float {
+    if (size <= 1) return 0f
+    var sumSquares = 0.0
+    var samples = 0
+    var index = 0
+    while (index + 1 < size) {
+        val sample = ((source[index + 1].toInt() shl 8) or (source[index].toInt() and 0xFF)).toShort().toInt()
+        sumSquares += sample.toDouble() * sample.toDouble()
+        samples++
+        index += 2
+    }
+    if (samples == 0) return 0f
+    val rms = kotlin.math.sqrt(sumSquares / samples)
+    return (rms / Short.MAX_VALUE).toFloat().coerceIn(0f, 1f)
+}
+
 internal fun generateTonePcm16(
     size: Int,
     gain: Float,
@@ -202,7 +218,7 @@ internal fun generateTonePcm16(
     phase: Double,
 ): GeneratedTonePcm {
     val output = ByteArray(size)
-    val amplitude = (Short.MAX_VALUE * 0.25f * gain.coerceIn(0f, 1f)).roundToInt()
+    val amplitude = (Short.MAX_VALUE * 0.25f * gain.coerceAtLeast(0f)).roundToInt()
     var currentPhase = phase
     var index = 0
     while (index + 1 < size) {

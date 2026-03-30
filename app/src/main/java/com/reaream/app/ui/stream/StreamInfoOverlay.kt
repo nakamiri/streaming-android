@@ -30,6 +30,7 @@ import com.reaream.app.data.model.AppSettings
 import com.reaream.app.streaming.StreamingEngine
 import kotlinx.coroutines.delay
 import java.util.Locale
+import kotlin.math.log10
 
 @Composable
 fun StreamInfoOverlay(
@@ -42,9 +43,14 @@ fun StreamInfoOverlay(
     screenBlackoutEnabled: Boolean = false,
 ) {
     val batteryTemperatureC = rememberBatteryTemperatureCelsius()
-    val showStreamInfo = settings.display.showStreamInfo && streamState.isStreaming
+    val showStreamInfo = settings.display.showStreamInfo
+    val isLive = streamState.isStreaming
     val showDeviceTemperature = settings.display.showDeviceTemperature
+    val showAudioLevel = showStreamInfo && settings.display.showAudioLevel
+    val showOverlay = showStreamInfo || showDeviceTemperature
     var showThermalDetails by remember { mutableStateOf(false) }
+
+    if (!showOverlay) return
 
     Column(
         modifier = modifier
@@ -57,7 +63,7 @@ fun StreamInfoOverlay(
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         // Live indicator
-        if (showStreamInfo) {
+        if (isLive) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     text = "LIVE",
@@ -83,7 +89,7 @@ fun StreamInfoOverlay(
             }
         }
 
-        if (showStreamInfo && onToggleThermalMitigation != null) {
+        if (isLive && onToggleThermalMitigation != null) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -103,8 +109,21 @@ fun StreamInfoOverlay(
             }
         }
 
-        if (showStreamInfo && settings.display.showBitrate) {
+        if (isLive && settings.display.showBitrate) {
             InfoText("${streamState.bitrateKbps} kbps")
+        }
+
+        if (showAudioLevel) {
+            AudioLevelMeter(
+                label = "IN",
+                level = streamState.inputAudioLevel,
+                activeColor = Color(0xFF4FC3F7),
+            )
+            AudioLevelMeter(
+                label = "OUT",
+                level = streamState.outputAudioLevel,
+                activeColor = Color(0xFF81C784),
+            )
         }
 
         if (showDeviceTemperature) {
@@ -123,7 +142,7 @@ fun StreamInfoOverlay(
             }
         }
 
-        if (showStreamInfo && settings.display.showFps && streamState.fps > 0) {
+        if (isLive && settings.display.showFps && streamState.fps > 0) {
             val fpsColor = when {
                 streamState.droppedFramesPerSec > 5 -> Color(0xFFFF4444)
                 streamState.droppedFramesPerSec > 0 -> Color(0xFFFFC107)
@@ -142,12 +161,16 @@ fun StreamInfoOverlay(
             )
         }
 
-        if (showStreamInfo && streamState.videoWidth > 0) {
-            val resLabel = "${streamState.videoWidth}x${streamState.videoHeight}"
+        if (showStreamInfo) {
+            val resLabel = if (streamState.videoWidth > 0) {
+                "${streamState.videoWidth}x${streamState.videoHeight}"
+            } else {
+                settings.currentStream.resolution.displayName
+            }
             InfoText(resLabel)
         }
 
-        if (showStreamInfo && streamState.adaptiveBitrateKbps > 0) {
+        if (isLive && streamState.adaptiveBitrateKbps > 0) {
             Text(
                 text = "▼ ${streamState.adaptiveBitrateKbps}kbps",
                 color = Color(0xFFFFC107),
@@ -156,14 +179,14 @@ fun StreamInfoOverlay(
             )
         }
 
-        if (showStreamInfo && settings.display.showUptime) {
+        if (isLive && settings.display.showUptime) {
             val hours = streamState.uptime / 3600
             val minutes = (streamState.uptime % 3600) / 60
             val seconds = streamState.uptime % 60
             InfoText(String.format(Locale.getDefault(), "%02d:%02d:%02d", hours, minutes, seconds))
         }
 
-        if (showStreamInfo && youtubeLiveUrl != null) {
+        if (isLive && youtubeLiveUrl != null) {
             val context = LocalContext.current
             var copied by remember { mutableStateOf(false) }
             Icon(
@@ -193,6 +216,49 @@ fun StreamInfoOverlay(
             onToggleScreenBlackout = onToggleScreenBlackout,
         )
     }
+}
+
+@Composable
+private fun AudioLevelMeter(
+    label: String,
+    level: Float,
+    activeColor: Color,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = label,
+            color = Color.White,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Box(
+            modifier = Modifier
+                .width(56.dp)
+                .height(6.dp)
+                .background(Color.White.copy(alpha = 0.18f), RoundedCornerShape(999.dp)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(level.coerceIn(0f, 1f))
+                    .background(activeColor, RoundedCornerShape(999.dp)),
+            )
+        }
+        Text(
+            text = formatAudioLevelDb(level),
+            color = Color.White.copy(alpha = 0.75f),
+            fontSize = 10.sp,
+        )
+    }
+}
+
+private fun formatAudioLevelDb(level: Float): String {
+    val clamped = level.coerceIn(0f, 1f)
+    if (clamped <= 0f) return "-inf dBFS"
+    return String.format(Locale.US, "%.1f dBFS", 20f * log10(clamped))
 }
 
 @Composable

@@ -26,6 +26,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -572,7 +573,7 @@ private fun LiveStreamSettingsDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Audio Source", color = Color.White, fontSize = 14.sp)
@@ -590,16 +591,13 @@ private fun LiveStreamSettingsDialog(
                 BitrateSection(
                     title = "Video Bitrate",
                     current = stream.videoBitrate,
-                    presets = listOf(4000, 5000, 6000, 8000),
+                    presets = listOf(4000, 5000, 6000, 8000, 9000),
                     valueText = videoBitrateText,
                     onValueTextChange = { videoBitrateText = it },
                     range = 1000..12000,
                     unitLabel = "kbps",
                     onSelect = onSetVideoBitrate,
-                    formatter = {
-                        val mbps = it / 1000f
-                        if (mbps == mbps.toInt().toFloat()) "${mbps.toInt()} Mbps" else String.format(java.util.Locale.US, "%.1f Mbps", mbps)
-                    },
+                    formatter = { compactVideoPresetLabel(it) },
                 )
 
                 BitrateSection(
@@ -611,7 +609,7 @@ private fun LiveStreamSettingsDialog(
                     range = 64..320,
                     unitLabel = "kbps",
                     onSelect = onSetAudioBitrate,
-                    formatter = { "${it} kbps" },
+                    formatter = { "${it}k" },
                 )
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -620,7 +618,7 @@ private fun LiveStreamSettingsDialog(
                     androidx.compose.material3.Slider(
                         value = audio.gain,
                         onValueChange = onSetAudioGain,
-                        valueRange = 0f..2f,
+                        valueRange = 0f..4f,
                     )
                 }
             }
@@ -649,7 +647,7 @@ private fun BitrateSection(
         Text(title, color = Color.White, fontSize = 14.sp)
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             androidx.compose.material3.OutlinedTextField(
@@ -659,7 +657,7 @@ private fun BitrateSection(
                     onValueTextChange(filtered)
                     filtered.toIntOrNull()?.let { onSelect(it.coerceIn(range)) }
                 },
-                modifier = Modifier.width(120.dp),
+                modifier = Modifier.width(110.dp),
                 singleLine = true,
                 label = { Text("Value") },
                 suffix = { Text(unitLabel) },
@@ -677,7 +675,9 @@ private fun BitrateSection(
             )
         }
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             presets.forEach { preset ->
@@ -693,6 +693,16 @@ private fun BitrateSection(
         }
     }
 }
+
+private fun compactVideoPresetLabel(bitrateKbps: Int): String {
+    val mbps = bitrateKbps / 1000f
+    return if (mbps == mbps.toInt().toFloat()) {
+        "${mbps.toInt()}M"
+    } else {
+        String.format(java.util.Locale.US, "%.1fM", mbps)
+    }
+}
+
 
 @Composable
 private fun LandscapeOverlay(
@@ -718,7 +728,7 @@ private fun LandscapeOverlay(
     onEditWidgets: () -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
-        if ((settings.display.showStreamInfo && streamState.isStreaming) || settings.display.showDeviceTemperature) {
+        if (settings.display.showStreamInfo || settings.display.showDeviceTemperature) {
             StreamInfoOverlay(
                 streamState = streamState,
                 settings = settings,
@@ -797,10 +807,10 @@ private fun PortraitOverlay(
                 .fillMaxWidth()
                 .weight(1f),
         ) {
-            if ((settings.display.showStreamInfo && streamState.isStreaming) || settings.display.showDeviceTemperature) {
-                StreamInfoOverlay(
-                    streamState = streamState,
-                    settings = settings,
+        if (settings.display.showStreamInfo || settings.display.showDeviceTemperature) {
+            StreamInfoOverlay(
+                streamState = streamState,
+                settings = settings,
                     youtubeLiveUrl = youtubeLiveUrl,
                     onToggleThermalMitigation = onToggleThermalMitigation,
                     onToggleScreenBlackout = onToggleScreenBlackout,

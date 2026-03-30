@@ -3,6 +3,7 @@ package com.reaream.app.streaming
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioCaptureTest {
@@ -49,5 +50,22 @@ class AudioCaptureTest {
         assertEquals(16, generated.pcm.size)
         assertFalse(generated.pcm.all { it == 0.toByte() })
         assertEquals(0.0, generated.nextPhase, 0.0001)
+    }
+
+    @Test
+    fun `calculatePcm16Level returns zero for silence`() {
+        assertEquals(0f, calculatePcm16Level(ByteArray(8), 8), 0.0001f)
+    }
+
+    @Test
+    fun `calculatePcm16Level detects non-zero pcm`() {
+        val pcm = byteArrayOf(
+            0xE8.toByte(), 0x03,
+            0x18, 0xFC.toByte(),
+        )
+
+        val level = calculatePcm16Level(pcm, pcm.size)
+
+        assertTrue(level > 0f)
     }
 }
