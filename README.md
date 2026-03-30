@@ -112,6 +112,7 @@ base64 -w 0 release.keystore | xclip -selection clipboard
 
 `release.yml` の挙動:
 
+- `Manual Build` は secrets を任意 branch で使わないよう `main` ブランチ実行のみ許可
 - `v*` tag push で実行
 - `KEYSTORE_BASE64` などが揃っていれば signed `release` APK を作成
 - keystore が無ければ unsigned `release` APK を作成
