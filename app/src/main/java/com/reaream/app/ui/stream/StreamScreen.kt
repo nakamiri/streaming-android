@@ -25,7 +25,10 @@ import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -37,6 +40,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -48,6 +52,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
 import com.reaream.app.data.model.AppSettings
+import com.reaream.app.data.model.AudioInputMode
 import com.reaream.app.data.model.Resolution
 import com.reaream.app.streaming.StreamingEngine
 import com.reaream.app.chat.ChatMessage
@@ -63,6 +68,10 @@ fun StreamScreen(
     onToggleTorch: () -> Unit,
     onSwitchCamera: () -> Unit,
     onOpenSettings: () -> Unit,
+    onSetAudioInputMode: (AudioInputMode) -> Unit,
+    onSetVideoBitrate: (Int) -> Unit,
+    onSetAudioBitrate: (Int) -> Unit,
+    onSetAudioGain: (Float) -> Unit,
     onToggleThermalMitigation: () -> Unit,
     onToggleScreenBlackout: () -> Unit,
     engine: StreamingEngine,
@@ -95,6 +104,7 @@ fun StreamScreen(
     var maxZoomRatio by remember { mutableFloatStateOf(10.0f) }
     var widgetEditMode by remember { mutableStateOf(false) }
     var widgetPanelVisible by remember { mutableStateOf(false) }
+    var liveSettingsVisible by remember { mutableStateOf(false) }
     var editingWidgets by remember { mutableStateOf<com.reaream.app.data.model.WidgetSettings?>(null) }
     var originalWidgets by remember { mutableStateOf<com.reaream.app.data.model.WidgetSettings?>(null) }
     val density = LocalDensity.current.density
@@ -227,6 +237,7 @@ fun StreamScreen(
                     onToggleTorch = onToggleTorch,
                     onSwitchCamera = onSwitchCamera,
                     onOpenSettings = onOpenSettings,
+                    onOpenLiveSettings = { liveSettingsVisible = true },
                     onToggleThermalMitigation = onToggleThermalMitigation,
                     onToggleScreenBlackout = onToggleScreenBlackout,
                     screenBlackoutEnabled = screenBlackoutEnabled,
@@ -249,6 +260,7 @@ fun StreamScreen(
                     onToggleTorch = onToggleTorch,
                     onSwitchCamera = onSwitchCamera,
                     onOpenSettings = onOpenSettings,
+                    onOpenLiveSettings = { liveSettingsVisible = true },
                     onToggleThermalMitigation = onToggleThermalMitigation,
                     onToggleScreenBlackout = onToggleScreenBlackout,
                     screenBlackoutEnabled = screenBlackoutEnabled,
@@ -269,6 +281,17 @@ fun StreamScreen(
                     .align(if (isLandscape) Alignment.BottomCenter else Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(bottom = if (isLandscape) 24.dp else 140.dp, start = 16.dp, end = 16.dp),
+            )
+        }
+
+        if (liveSettingsVisible) {
+            LiveStreamSettingsDialog(
+                settings = settings,
+                onDismiss = { liveSettingsVisible = false },
+                onSetAudioInputMode = onSetAudioInputMode,
+                onSetVideoBitrate = onSetVideoBitrate,
+                onSetAudioBitrate = onSetAudioBitrate,
+                onSetAudioGain = onSetAudioGain,
             )
         }
 
@@ -529,6 +552,159 @@ private fun BroadcastPickerDialog(
 }
 
 @Composable
+private fun LiveStreamSettingsDialog(
+    settings: AppSettings,
+    onDismiss: () -> Unit,
+    onSetAudioInputMode: (AudioInputMode) -> Unit,
+    onSetVideoBitrate: (Int) -> Unit,
+    onSetAudioBitrate: (Int) -> Unit,
+    onSetAudioGain: (Float) -> Unit,
+) {
+    val stream = settings.currentStream
+    val audio = settings.audio
+    var videoBitrateText by remember(stream.videoBitrate) { mutableStateOf(stream.videoBitrate.toString()) }
+    var audioBitrateText by remember(stream.audioBitrate) { mutableStateOf(stream.audioBitrate.toString()) }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { androidx.compose.material3.Text("配信設定") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Audio Source", color = Color.White, fontSize = 14.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AudioInputMode.entries.forEach { mode ->
+                            androidx.compose.material3.FilterChip(
+                                selected = audio.inputMode == mode,
+                                onClick = { onSetAudioInputMode(mode) },
+                                label = { Text(if (mode == AudioInputMode.MICROPHONE) "Microphone" else "Test Tone") },
+                            )
+                        }
+                    }
+                }
+
+                BitrateSection(
+                    title = "Video Bitrate",
+                    current = stream.videoBitrate,
+                    presets = listOf(4000, 5000, 6000, 8000, 9000),
+                    valueText = videoBitrateText,
+                    onValueTextChange = { videoBitrateText = it },
+                    range = 1000..12000,
+                    unitLabel = "kbps",
+                    onSelect = onSetVideoBitrate,
+                    formatter = { compactVideoPresetLabel(it) },
+                )
+
+                BitrateSection(
+                    title = "Audio Bitrate",
+                    current = stream.audioBitrate,
+                    presets = listOf(96, 128, 160, 192),
+                    valueText = audioBitrateText,
+                    onValueTextChange = { audioBitrateText = it },
+                    range = 64..320,
+                    unitLabel = "kbps",
+                    onSelect = onSetAudioBitrate,
+                    formatter = { "${it}k" },
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Audio Gain", color = Color.White, fontSize = 14.sp)
+                    Text(String.format(java.util.Locale.US, "%.1fx", audio.gain), color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
+                    androidx.compose.material3.Slider(
+                        value = audio.gain,
+                        onValueChange = onSetAudioGain,
+                        valueRange = 0f..4f,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                androidx.compose.material3.Text("閉じる")
+            }
+        },
+    )
+}
+
+@Composable
+private fun BitrateSection(
+    title: String,
+    current: Int,
+    presets: List<Int>,
+    valueText: String,
+    onValueTextChange: (String) -> Unit,
+    range: IntRange,
+    unitLabel: String,
+    onSelect: (Int) -> Unit,
+    formatter: (Int) -> String,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, color = Color.White, fontSize = 14.sp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            androidx.compose.material3.OutlinedTextField(
+                value = valueText,
+                onValueChange = { raw ->
+                    val filtered = raw.filter { it.isDigit() }
+                    onValueTextChange(filtered)
+                    filtered.toIntOrNull()?.let { onSelect(it.coerceIn(range)) }
+                },
+                modifier = Modifier.width(110.dp),
+                singleLine = true,
+                label = { Text("Value") },
+                suffix = { Text(unitLabel) },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
+            )
+            androidx.compose.material3.Slider(
+                value = current.toFloat(),
+                onValueChange = {
+                    val selected = it.toInt().coerceIn(range)
+                    onValueTextChange(selected.toString())
+                    onSelect(selected)
+                },
+                valueRange = range.first.toFloat()..range.last.toFloat(),
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            presets.forEach { preset ->
+                androidx.compose.material3.FilterChip(
+                    selected = current == preset,
+                    onClick = {
+                        onValueTextChange(preset.toString())
+                        onSelect(preset)
+                    },
+                    label = { Text(formatter(preset)) },
+                )
+            }
+        }
+    }
+}
+
+private fun compactVideoPresetLabel(bitrateKbps: Int): String {
+    val mbps = bitrateKbps / 1000f
+    return if (mbps == mbps.toInt().toFloat()) {
+        "${mbps.toInt()}M"
+    } else {
+        String.format(java.util.Locale.US, "%.1fM", mbps)
+    }
+}
+
+
+@Composable
 private fun LandscapeOverlay(
     settings: AppSettings,
     streamState: StreamingEngine.StreamState,
@@ -544,6 +720,7 @@ private fun LandscapeOverlay(
     onToggleTorch: () -> Unit,
     onSwitchCamera: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenLiveSettings: () -> Unit,
     onToggleThermalMitigation: () -> Unit,
     onToggleScreenBlackout: () -> Unit,
     screenBlackoutEnabled: Boolean,
@@ -551,7 +728,7 @@ private fun LandscapeOverlay(
     onEditWidgets: () -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
-        if ((settings.display.showStreamInfo && streamState.isStreaming) || settings.display.showDeviceTemperature) {
+        if (settings.display.showStreamInfo || settings.display.showDeviceTemperature) {
             StreamInfoOverlay(
                 streamState = streamState,
                 settings = settings,
@@ -591,6 +768,7 @@ private fun LandscapeOverlay(
             onToggleTorch = onToggleTorch,
             onSwitchCamera = onSwitchCamera,
             onOpenSettings = onOpenSettings,
+            onOpenLiveSettings = onOpenLiveSettings,
             onZoomChange = onZoomChange,
             onEditWidgets = onEditWidgets,
             modifier = Modifier
@@ -616,6 +794,7 @@ private fun PortraitOverlay(
     onToggleTorch: () -> Unit,
     onSwitchCamera: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenLiveSettings: () -> Unit,
     onToggleThermalMitigation: () -> Unit,
     onToggleScreenBlackout: () -> Unit,
     screenBlackoutEnabled: Boolean,
@@ -628,10 +807,10 @@ private fun PortraitOverlay(
                 .fillMaxWidth()
                 .weight(1f),
         ) {
-            if ((settings.display.showStreamInfo && streamState.isStreaming) || settings.display.showDeviceTemperature) {
-                StreamInfoOverlay(
-                    streamState = streamState,
-                    settings = settings,
+        if (settings.display.showStreamInfo || settings.display.showDeviceTemperature) {
+            StreamInfoOverlay(
+                streamState = streamState,
+                settings = settings,
                     youtubeLiveUrl = youtubeLiveUrl,
                     onToggleThermalMitigation = onToggleThermalMitigation,
                     onToggleScreenBlackout = onToggleScreenBlackout,
@@ -669,6 +848,7 @@ private fun PortraitOverlay(
             onToggleTorch = onToggleTorch,
             onSwitchCamera = onSwitchCamera,
             onOpenSettings = onOpenSettings,
+            onOpenLiveSettings = onOpenLiveSettings,
             onZoomChange = onZoomChange,
             onEditWidgets = onEditWidgets,
             modifier = Modifier

@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
 fun StreamEditScreen(
     streamIndex: Int,
     settings: AppSettings,
+    isStreaming: Boolean,
     onBack: () -> Unit,
     onSave: (Int, StreamConfig) -> Unit,
     youtubeAuthManager: YouTubeAuthManager? = null,
@@ -123,6 +124,14 @@ fun StreamEditScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (isStreaming && streamIndex == settings.selectedStreamIndex) {
+                Text(
+                    text = "配信中です。Video Bitrate / Audio Bitrate / アダプティブ品質は即時反映されます。URL・解像度・FPS・Codec は次回開始時に反映されます。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                )
+            }
+
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },

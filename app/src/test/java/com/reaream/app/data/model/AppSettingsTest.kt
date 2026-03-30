@@ -45,7 +45,12 @@ class AppSettingsTest {
             ),
             selectedStreamIndex = 1,
             camera = CameraSettings(useFrontCamera = true, zoomLevel = 2.5f),
-            audio = AudioSettings(muted = true, gain = 0.5f),
+            audio = AudioSettings(
+                muted = true,
+                gain = 0.5f,
+                inputMode = AudioInputMode.TEST_TONE,
+                toneFrequencyHz = 440,
+            ),
             display = DisplaySettings(showChat = false, showFps = false, showDeviceTemperature = false),
             chat = ChatSettings(twitchChannelName = "testchannel"),
             recording = RecordingSettings(enabled = true, videoBitrate = 8000),
@@ -72,6 +77,8 @@ class AppSettingsTest {
         val audio = AudioSettings()
         assertFalse(audio.muted)
         assertEquals(1f, audio.gain, 0.001f)
+        assertEquals(AudioInputMode.MICROPHONE, audio.inputMode)
+        assertEquals(1000, audio.toneFrequencyHz)
     }
 
     @Test

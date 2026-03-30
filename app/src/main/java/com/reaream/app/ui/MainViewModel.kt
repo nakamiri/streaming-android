@@ -19,6 +19,7 @@ import com.reaream.app.streaming.StreamingEngine
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -27,8 +28,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val chatManager = ChatManager()
     val locationProvider = LocationProvider(application)
     val mapTileProvider = MapTileProvider()
-    val audioCapture = AudioCapture { data, timestamp ->
-        streamingEngine.onAudioData(data, timestamp)
+    val audioCapture = AudioCapture { data, timestamp, inputLevel, outputLevel ->
+        streamingEngine.onAudioData(data, timestamp, inputLevel, outputLevel)
     }
 
     val youtubeAuthManager = YouTubeAuthManager(application)
@@ -37,6 +38,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // YouTube broadcast ID for the current session (to end broadcast on stop)
     private var currentYoutubeBroadcastId: String? = null
     private var streamingResourcesActive = false
+    private var lastObservedSelectedStreamConfig: StreamConfig? = null
 
     private val _youtubeLiveUrl = MutableStateFlow<String?>(null)
     val youtubeLiveUrl: StateFlow<String?> = _youtubeLiveUrl.asStateFlow()
@@ -86,6 +88,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             settings.collect { s ->
                 streamingEngine.widgetSettingsRef.set(s.widgets)
+                audioCapture.isMuted = s.audio.muted
+                audioCapture.gain = s.audio.gain
+                audioCapture.inputMode = s.audio.inputMode
+                audioCapture.toneFrequencyHz = s.audio.toneFrequencyHz
+
+                val selectedStream = s.streams.getOrNull(s.selectedStreamIndex)
+                if (selectedStream != null && selectedStream != lastObservedSelectedStreamConfig) {
+                    lastObservedSelectedStreamConfig = selectedStream
+                    if (streamState.value.isStreaming || streamState.value.isConnecting) {
+                        streamingEngine.updateLiveStreamConfig(buildLiveStreamConfig(selectedStream))
+                    }
+                }
 
                 // Start/stop location updates based on widget config
                 if (s.widgets.locationWidget.enabled || s.widgets.speedWidget.enabled || s.widgets.mapWidget.enabled) {
@@ -127,6 +141,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             streamingEngine.state.collect { state ->
+                updateStreamingNotification(state)
                 if (!state.isStreaming && !state.isConnecting && streamingResourcesActive) {
                     stopStreamingResources()
                 }
@@ -266,8 +281,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         // Start audio capture
         audioCapture.isMuted = settings.value.audio.muted
+        audioCapture.gain = settings.value.audio.gain
+        audioCapture.inputMode = settings.value.audio.inputMode
+        audioCapture.toneFrequencyHz = settings.value.audio.toneFrequencyHz
         if (!audioCapture.start(context)) {
-            streamingEngine.showError("マイク権限または初期化に失敗したため、配信を開始できません。")
+            streamingEngine.showError("音声入力の初期化に失敗したため、配信を開始できません。")
             return
         }
 
@@ -350,6 +368,63 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun toggleAudioSource() {
+        viewModelScope.launch {
+            val current = settings.value.audio.inputMode
+            val next = when (current) {
+                AudioInputMode.MICROPHONE -> AudioInputMode.TEST_TONE
+                AudioInputMode.TEST_TONE -> AudioInputMode.MICROPHONE
+            }
+            settingsRepo.update { it.copy(audio = it.audio.copy(inputMode = next)) }
+            audioCapture.inputMode = next
+            if (streamState.value.isStreaming) {
+                restartAudioCaptureForStreaming()
+            }
+        }
+    }
+
+    fun cycleVideoBitrate() {
+        updateSelectedStream { stream ->
+            val next = cyclePreset(stream.videoBitrate, VIDEO_BITRATE_PRESETS_KBPS)
+            stream.copy(videoBitrate = next)
+        }
+    }
+
+    fun cycleAudioBitrate() {
+        updateSelectedStream { stream ->
+            val next = cyclePreset(stream.audioBitrate, AUDIO_BITRATE_PRESETS_KBPS)
+            stream.copy(audioBitrate = next)
+        }
+    }
+
+    fun setVideoBitrate(videoBitrateKbps: Int) {
+        updateSelectedStream { stream -> stream.copy(videoBitrate = videoBitrateKbps) }
+    }
+
+    fun setAudioBitrate(audioBitrateKbps: Int) {
+        updateSelectedStream { stream -> stream.copy(audioBitrate = audioBitrateKbps) }
+    }
+
+    fun setAudioInputMode(mode: AudioInputMode) {
+        viewModelScope.launch {
+            val updated = settings.value.audio.copy(inputMode = mode)
+            settingsRepo.update { it.copy(audio = updated) }
+            audioCapture.inputMode = mode
+            if (streamState.value.isStreaming) {
+                restartAudioCaptureForStreaming()
+            }
+        }
+    }
+
+    fun setAudioGain(gain: Float) {
+        val clamped = gain.coerceIn(0f, 4f)
+        viewModelScope.launch {
+            val updated = settings.value.audio.copy(gain = clamped)
+            settingsRepo.update { it.copy(audio = updated) }
+            audioCapture.gain = clamped
+        }
+    }
+
     fun navigate(screen: Screen) {
         if (screen != _currentScreen.value) {
             _screenStack.add(_currentScreen.value)
@@ -367,6 +442,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateStream(index: Int, config: StreamConfig) {
         viewModelScope.launch {
+            val shouldApplyLive = index == settings.value.selectedStreamIndex && streamState.value.isStreaming
             settingsRepo.update {
                 val streams = it.streams.toMutableList()
                 if (index < streams.size) {
@@ -375,6 +451,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     streams.add(config)
                 }
                 it.copy(streams = streams)
+            }
+
+            if (shouldApplyLive) {
+                val liveConfig = buildLiveStreamConfig(config)
+                streamingEngine.updateLiveStreamConfig(liveConfig)
             }
         }
     }
@@ -426,7 +507,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateAudioSettings(audio: AudioSettings) {
         viewModelScope.launch {
+            val previous = settings.value.audio
             settingsRepo.update { it.copy(audio = audio) }
+
+            audioCapture.isMuted = audio.muted
+            audioCapture.gain = audio.gain
+            audioCapture.inputMode = audio.inputMode
+            audioCapture.toneFrequencyHz = audio.toneFrequencyHz
+
+            if (streamState.value.isStreaming && previous.inputMode != audio.inputMode) {
+                restartAudioCaptureForStreaming()
+            }
         }
     }
 
@@ -464,6 +555,92 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         chatManager.release()
         locationProvider.release()
         mapTileProvider.release()
+    }
+
+    private fun restartAudioCaptureForStreaming() {
+        val context = getApplication<Application>()
+        if (!audioCapture.start(context)) {
+            streamingEngine.showError("音声入力の切り替えに失敗したため、配信を継続できません。")
+            stopStreaming(endBroadcast = false)
+        }
+    }
+
+    private fun updateSelectedStream(transform: (StreamConfig) -> StreamConfig) {
+        viewModelScope.launch {
+            val currentSettings = settings.value
+            val currentIndex = currentSettings.selectedStreamIndex
+            val currentStream = currentSettings.streams.getOrNull(currentIndex) ?: return@launch
+            val updatedStream = transform(currentStream)
+            settingsRepo.update {
+                val streams = it.streams.toMutableList()
+                if (currentIndex < streams.size) {
+                    streams[currentIndex] = updatedStream
+                }
+                it.copy(streams = streams)
+            }
+            if (streamState.value.isStreaming || streamState.value.isConnecting) {
+                streamingEngine.updateLiveStreamConfig(buildLiveStreamConfig(updatedStream))
+            }
+        }
+    }
+
+    private fun updateStreamingNotification(state: StreamingEngine.StreamState) {
+        if (!streamingResourcesActive && !state.isStreaming && !state.isConnecting) return
+        val context = getApplication<Application>()
+        val intent = Intent(context, StreamingService::class.java).apply {
+            action = StreamingService.ACTION_UPDATE_INFO
+            putExtra(StreamingService.EXTRA_STATUS_TEXT, buildNotificationStatusText(state, settings.value))
+        }
+        context.startService(intent)
+    }
+
+    private fun buildLiveStreamConfig(savedConfig: StreamConfig): StreamConfig {
+        val active = streamingEngine.getCurrentConfig() ?: return savedConfig
+        return savedConfig.copy(
+            url = active.url,
+            streamKey = active.streamKey,
+            authType = active.authType,
+            youtubeChannelId = active.youtubeChannelId,
+            youtubeChannelName = active.youtubeChannelName,
+            youtubeBroadcastTitle = active.youtubeBroadcastTitle,
+            youtubePrivacy = active.youtubePrivacy,
+            youtubeLatency = active.youtubeLatency,
+            youtubeAutoStart = active.youtubeAutoStart,
+            youtubeAutoStop = active.youtubeAutoStop,
+        )
+    }
+}
+
+private val VIDEO_BITRATE_PRESETS_KBPS = listOf(4000, 5000, 6000, 8000)
+private val AUDIO_BITRATE_PRESETS_KBPS = listOf(96, 128, 160, 192)
+
+private fun cyclePreset(currentValue: Int, presets: List<Int>): Int {
+    if (presets.isEmpty()) return currentValue
+    val currentIndex = presets.indexOf(currentValue).takeIf { it >= 0 }
+        ?: presets.indices.minBy { kotlin.math.abs(presets[it] - currentValue) }
+    return presets[(currentIndex + 1) % presets.size]
+}
+
+private fun buildNotificationStatusText(
+    state: StreamingEngine.StreamState,
+    settings: AppSettings,
+): String {
+    val source = when (settings.audio.inputMode) {
+        AudioInputMode.MICROPHONE -> "Mic"
+        AudioInputMode.TEST_TONE -> "Tone"
+    }
+    return when {
+        state.isConnecting -> "Connecting | $source"
+        state.isStreaming -> {
+            val fpsText = if (state.fps > 0) String.format(Locale.US, "%dfps", state.fps) else "--fps"
+            val resolutionText = if (state.videoWidth > 0) {
+                "${state.videoWidth}x${state.videoHeight}"
+            } else {
+                settings.currentStream.resolution.displayName
+            }
+            "${state.bitrateKbps}kbps | $fpsText | $resolutionText | $source"
+        }
+        else -> "Idle | $source"
     }
 }
 

@@ -51,6 +51,10 @@ fun ReareamApp(
                 onToggleTorch = viewModel::toggleTorch,
                 onSwitchCamera = viewModel::switchCamera,
                 onOpenSettings = { viewModel.navigate(Screen.Settings) },
+                onSetAudioInputMode = viewModel::setAudioInputMode,
+                onSetVideoBitrate = viewModel::setVideoBitrate,
+                onSetAudioBitrate = viewModel::setAudioBitrate,
+                onSetAudioGain = viewModel::setAudioGain,
                 onToggleThermalMitigation = viewModel::toggleThermalMitigation,
                 onToggleScreenBlackout = viewModel::toggleScreenBlackout,
                 onClearError = { viewModel.streamingEngine.clearError() },
@@ -92,6 +96,7 @@ fun ReareamApp(
             is Screen.StreamEdit -> StreamEditScreen(
                 streamIndex = screen.index,
                 settings = settings,
+                isStreaming = streamState.isStreaming,
                 onBack = viewModel::navigateBack,
                 onSave = viewModel::updateStream,
                 youtubeAuthManager = viewModel.youtubeAuthManager,
@@ -107,6 +112,7 @@ fun ReareamApp(
 
             is Screen.AudioSettings -> AudioSettingsScreen(
                 audio = settings.audio,
+                isStreaming = streamState.isStreaming,
                 onBack = viewModel::navigateBack,
                 onUpdate = viewModel::updateAudioSettings,
             )
