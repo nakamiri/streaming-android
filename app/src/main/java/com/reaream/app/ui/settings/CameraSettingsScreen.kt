@@ -1,5 +1,6 @@
 package com.reaream.app.ui.settings
 
+import android.hardware.camera2.CameraManager
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -7,10 +8,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.reaream.app.camera.getVideoStabilizationSupport
 import com.reaream.app.data.model.CameraSettings
+import com.reaream.app.data.model.VideoStabilizationMode
 import com.reaream.app.ui.Screen
 import java.util.Locale
 
@@ -21,6 +26,36 @@ fun CameraSettingsScreen(
     onBack: () -> Unit,
     onUpdate: (CameraSettings) -> Unit,
 ) {
+    val context = LocalContext.current
+    val cameraManager = remember(context) {
+        context.getSystemService(CameraManager::class.java)
+    }
+    val stabilizationSupport = remember(cameraManager, camera.useFrontCamera) {
+        getVideoStabilizationSupport(cameraManager, camera.useFrontCamera)
+    }
+    val hasElectronicStabilization = stabilizationSupport.electronicMode != null
+    val hasOpticalStabilization = stabilizationSupport.hasOpticalStabilization
+    val selectedCameraLabel = if (camera.useFrontCamera) "front" else "back"
+    val stabilizationSubtitle = buildString {
+        append("Selected camera: $selectedCameraLabel\n")
+        append(if (hasOpticalStabilization) {
+            "Optical stabilization is available"
+        } else {
+            "Optical stabilization is not available"
+        })
+        append("\n")
+        append(
+            when (stabilizationSupport.electronicMode) {
+                android.hardware.camera2.CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_PREVIEW_STABILIZATION -> {
+                    "Electronic stabilization is available as Preview stabilization"
+                }
+                null -> "Electronic stabilization is not available"
+                else -> "Electronic stabilization is available as Video stabilization"
+            }
+        )
+        append("\nAuto prefers optical, then falls back to electronic")
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -53,11 +88,40 @@ fun CameraSettingsScreen(
                 onCheckedChange = { onUpdate(camera.copy(mirrorFrontCamera = it)) },
             )
 
-            SwitchItem(
-                title = "Video Stabilization",
-                subtitle = "Enable electronic video stabilization",
-                checked = camera.videoStabilization,
-                onCheckedChange = { onUpdate(camera.copy(videoStabilization = it)) },
+            ListItem(
+                headlineContent = { Text("Stabilization Mode") },
+                supportingContent = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stabilizationSubtitle)
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            VideoStabilizationMode.entries.forEachIndexed { index, mode ->
+                                val enabled = when (mode) {
+                                    VideoStabilizationMode.AUTO -> hasOpticalStabilization || hasElectronicStabilization
+                                    VideoStabilizationMode.OPTICAL -> hasOpticalStabilization
+                                    VideoStabilizationMode.ELECTRONIC -> hasElectronicStabilization
+                                }
+                                SegmentedButton(
+                                    selected = camera.stabilizationMode == mode,
+                                    enabled = enabled,
+                                    onClick = {
+                                        onUpdate(
+                                            camera.copy(
+                                                videoStabilization = mode == VideoStabilizationMode.ELECTRONIC,
+                                                stabilizationMode = mode,
+                                            )
+                                        )
+                                    },
+                                    shape = SegmentedButtonDefaults.itemShape(
+                                        index = index,
+                                        count = VideoStabilizationMode.entries.size,
+                                    ),
+                                ) {
+                                    Text(mode.displayName)
+                                }
+                            }
+                        }
+                    }
+                },
             )
 
             SwitchItem(
@@ -89,6 +153,7 @@ fun SwitchItem(
     title: String,
     subtitle: String,
     checked: Boolean,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     ListItem(
@@ -97,6 +162,7 @@ fun SwitchItem(
         trailingContent = {
             Switch(
                 checked = checked,
+                enabled = enabled,
                 onCheckedChange = onCheckedChange,
             )
         },

@@ -22,9 +22,21 @@ data class CameraSettings(
     val useFrontCamera: Boolean = false,
     val mirrorFrontCamera: Boolean = true,
     val videoStabilization: Boolean = false,
+    val stabilizationMode: VideoStabilizationMode = if (videoStabilization) {
+        VideoStabilizationMode.ELECTRONIC
+    } else {
+        VideoStabilizationMode.AUTO
+    },
     val autoFocus: Boolean = true,
     val zoomLevel: Float = 1f,
 )
+
+@Serializable
+enum class VideoStabilizationMode(val displayName: String) {
+    AUTO("Auto"),
+    OPTICAL("Optical"),
+    ELECTRONIC("Electronic"),
+}
 
 @Serializable
 data class AudioSettings(
