@@ -1,5 +1,6 @@
 package com.reaream.app.streaming
 
+import android.annotation.SuppressLint
 import android.Manifest
 import android.content.pm.PackageManager
 import android.media.AudioFormat
@@ -142,6 +143,7 @@ class AudioCapture(
         }
     }
 
+    @SuppressLint("MissingPermission")
     private fun createAudioRecord(
         sampleRate: Int,
         channelConfig: Int,
