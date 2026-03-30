@@ -18,6 +18,7 @@
 - 作業は必ずフィーチャーブランチ（`feature/xxx`）で行い、`gh pr create` で PR を作成する
 - PR タイトルは英語、PR 本文は日本語で書く
 - PR 本文の形式は直近の `#21` 以前の PR に合わせ、`## Summary` と `## Test plan` を使う
+- PR 本文や実行手順には `/Users/...` のようなローカル環境依存の絶対パスを書かない。リポジトリルート基準の相対パスか一般的なコマンドにする
 - `git worktree` や Claude Code / OpenCode などの別 worktree で作業する場合、元 repo の `local.properties` は自動で来ないことがある。YouTube OAuth を使うビルドや確認の前に、元 repo からその worktree へ `local.properties` をコピーしておく
 
 ```bash
